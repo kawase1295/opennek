@@ -1,0 +1,7 @@
+{
+  "name": "OpenNEK",
+  "version": "0.1.0",
+  "description": "OpenNEK radio frame, ESP-NOW transport and device API",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}
