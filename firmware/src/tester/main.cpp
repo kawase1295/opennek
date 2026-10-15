@@ -689,6 +689,7 @@ void setup() {
   canvas.createSprite(240, 135);
 
   Serial.begin();
+  Serial.setTxTimeoutMs(0);  // never stall the receiver when the PC is attached but not reading
   lsm.setRxBufferSize(8192);
   lsm.begin(115200, SERIAL_8N1, LSM_RX, LSM_TX);
 
