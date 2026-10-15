@@ -1,123 +1,125 @@
-# OpenNEK プロトコル仕様 v1
+# OpenNEK Protocol Specification v1
 
-OpenNEK は 3 つの層で構成される。
+**English** | [日本語](protocol.ja.md)
+
+OpenNEK consists of three layers.
 
 ```
-[デバイス ESP32] --(1) 無線フレーム / ESP-NOW--> [ゲートウェイ ESP32] --(2) JSON Lines / USB シリアル--> [ホスト (Bun)] --(3) HTTP コールバック--> [アプリ]
-       ^                                                                                                     |
-       +---------------------------------------- ダウンリンク (8 バイト) ------------------------------------+
+[Device ESP32] --(1) radio frame / ESP-NOW--> [Gateway ESP32] --(2) JSON Lines / USB serial--> [Host (Bun)] --(3) HTTP callback--> [App]
+       ^                                                                                                  |
+       +------------------------------------------ downlink (8 bytes) -----------------------------------+
 ```
 
-ゲートウェイは「無線 ⇔ シリアル」の単純なブリッジで、フレームの解釈・認証・重複除去・
-コールバック・ダウンリンク決定はすべてホストが行う。
+The gateway is a simple radio ⇔ serial bridge. Frame parsing, authentication, de-duplication,
+callbacks and downlink decisions are all done by the host.
 
 ---
 
-## (1) 無線フレーム
+## (1) Radio frame
 
-- 物理層: ESP-NOW (Wi-Fi 2.4 GHz)。チャンネル 1〜13 (既定 1)。全員が同じチャンネルに合わせる。
-- アップリンクはブロードキャスト (`FF:FF:FF:FF:FF:FF`) で **3 回繰り返し**送る (repeat 0,1,2)。
-- ダウンリンクはゲートウェイからデバイスの MAC アドレスへユニキャスト。
-- 整数はすべて **リトルエンディアン**。
+- Physical layer: ESP-NOW (Wi-Fi 2.4 GHz). Channel 1–13 (default 1). All nodes must use the same channel.
+- Uplinks are broadcast (`FF:FF:FF:FF:FF:FF`) and **repeated 3 times** (repeat 0, 1, 2).
+- Downlinks are unicast from the gateway to the device's MAC address.
+- All integers are **little-endian**.
 
-### レイアウト (アップリンク・ダウンリンク共通)
+### Layout (shared by uplink and downlink)
 
-| オフセット | サイズ | フィールド | 内容 |
+| Offset | Size | Field | Contents |
 |---|---|---|---|
 | 0 | 2 | magic | `0x4E 0x4B` ("NK") |
 | 2 | 1 | version | `1` |
-| 3 | 1 | type | `0x01` = アップリンク, `0x02` = ダウンリンク |
-| 4 | 1 | flags | 下表 |
-| 5 | 4 | deviceId | uint32。表示は 8 桁の大文字 16 進 (例 `0A1B2C3D`) |
-| 9 | 2 | seq | シーケンス番号 0〜4095 (12 bit、4095 の次は 0) |
-| 11 | 1 | len | ペイロード長。アップリンク 0〜12、ダウンリンクは常に 8 |
+| 3 | 1 | type | `0x01` = uplink, `0x02` = downlink |
+| 4 | 1 | flags | see below |
+| 5 | 4 | deviceId | uint32, displayed as 8 upper-case hex digits (e.g. `0A1B2C3D`) |
+| 9 | 2 | seq | sequence number 0–4095 (12 bits, wraps from 4095 to 0) |
+| 11 | 1 | len | payload length: 0–12 for uplinks, always 8 for downlinks |
 | 12 | len | payload | |
-| 12+len | 4 | mac | `HMAC-SHA256(key, frame[0 .. 12+len))` の先頭 4 バイト。計算時は flags の repeat ビットを 0 にする |
+| 12+len | 4 | mac | first 4 bytes of `HMAC-SHA256(key, frame[0 .. 12+len))`, computed with the repeat bits of flags set to 0 |
 
 flags:
 
-| bit | 意味 |
+| Bit | Meaning |
 |---|---|
-| 0 | ダウンリンク要求 (アップリンクのみ) |
-| 1-2 | repeat 番号 0〜2 |
-| 3 | OOB (keep-alive) フレーム |
-| 4-7 | 予約 (0) |
+| 0 | downlink requested (uplink only) |
+| 1-2 | repeat number 0–2 |
+| 3 | OOB (keep-alive) frame |
+| 4-7 | reserved (0) |
 
-- `key` はデバイスごとの 16 バイト鍵。デバイスが初回起動時に乱数で生成して NVS に保存し、
-  `AT$PAC` で 32 桁 16 進として読み出せる。ホストにはデバイス ID と一緒にこの鍵を登録する。
-- ダウンリンクの `seq` は応答対象のアップリンクの seq をそのまま入れる。デバイスは
-  deviceId・seq・mac が一致したものだけを受け入れる。
+- `key` is a 16-byte per-device key. The device generates it randomly on first boot, stores it in NVS,
+  and reports it as 32 hex digits via `AT$PAC`. Register this key on the host together with the device ID.
+- A downlink carries the `seq` of the uplink it answers. The device accepts only downlinks whose
+  deviceId, seq and mac all match.
 
-### タイミング
+### Timing
 
-- repeat 間隔: 30 ms
-- ダウンリンク要求時、デバイスは最後の repeat から最大 `dlWaitMs` (既定 8000 ms) 受信待ちする。
-- ホストは最初のフレーム受信から `dedupWindowMs` (既定 400 ms) 待って repeat をまとめ、
-  その後コールバック → ダウンリンク送信を `downlinkTimeoutMs` (既定 5000 ms) 以内に行う。
+- Interval between repeats: 30 ms
+- When a downlink is requested, the device listens for up to `dlWaitMs` (default 8000 ms) after the last repeat.
+- The host waits `dedupWindowMs` (default 400 ms) after the first frame to merge the repeats, then runs
+  callbacks and sends the downlink within `downlinkTimeoutMs` (default 5000 ms).
 
 ---
 
-## (2) ゲートウェイ ⇔ ホスト (USB シリアル)
+## (2) Gateway ⇔ host (USB serial)
 
-115200 bps 8N1、1 行 1 JSON (`\n` 区切り)。
+115200 bps 8N1, one JSON object per line (`\n` separated).
 
-### ゲートウェイ → ホスト
+### Gateway → host
 
 ```jsonc
-{"t":"hello","fw":"0.1.0","radio":"espnow","ch":1,"mac":"24:6F:28:AA:BB:CC"}  // 起動時と ping 応答
-{"t":"up","src":"24:6F:28:11:22:33","rssi":-48,"frame":"4E4B0101..."}           // 受信した無線フレーム (生 16 進)
-{"t":"sent","dst":"24:6F:28:11:22:33","ok":true}                               // ダウンリンク送信結果
-{"t":"log","msg":"..."}                                                        // デバッグ
+{"t":"hello","fw":"0.1.0","radio":"espnow","ch":1,"mac":"24:6F:28:AA:BB:CC"}  // on boot and in reply to ping
+{"t":"up","src":"24:6F:28:11:22:33","rssi":-48,"frame":"4E4B0101..."}           // received radio frame (raw hex)
+{"t":"sent","dst":"24:6F:28:11:22:33","ok":true}                               // downlink send result
+{"t":"log","msg":"..."}                                                        // debug
 ```
 
-### ホスト → ゲートウェイ
+### Host → gateway
 
 ```jsonc
 {"t":"ping"}
-{"t":"ch","ch":6}                                             // チャンネル変更 (NVS 保存、hello を返す)
-{"t":"down","dst":"24:6F:28:11:22:33","frame":"4E4B0102..."}  // ダウンリンク送信
+{"t":"ch","ch":6}                                             // change channel (saved to NVS, replies with hello)
+{"t":"down","dst":"24:6F:28:11:22:33","frame":"4E4B0102..."}  // send a downlink
 ```
 
 ---
 
-## (3) HTTP コールバック
+## (3) HTTP callbacks
 
-Sigfox バックエンドのカスタムコールバックと互換の変数を使える。
+Variables compatible with Sigfox backend custom callbacks are available.
 
-| 変数 | 内容 |
+| Variable | Contents |
 |---|---|
-| `{device}` | デバイス ID (8 桁 16 進) |
-| `{deviceName}` | ホストに登録した名前 |
-| `{time}` | 受信時刻 (UNIX 秒) |
-| `{data}` | ペイロード (16 進小文字) |
-| `{seqNumber}` | シーケンス番号 |
-| `{ack}` | ダウンリンク要求 `true` / `false` |
-| `{rssi}` | 最良 RSSI (dBm) |
-| `{snr}` | 常に `0` (ESP-NOW では取れない) |
-| `{station}` | ゲートウェイの MAC 下位 4 バイト (16 進) |
-| `{nbFrames}` | 受信できた repeat 数 |
-| `{oob}` | OOB フレームなら `true` |
-| `{customData#名前}` | カスタムペイロード設定でデコードした値 |
+| `{device}` | device ID (8 hex digits) |
+| `{deviceName}` | name registered on the host |
+| `{time}` | reception time (UNIX seconds) |
+| `{data}` | payload (lower-case hex) |
+| `{seqNumber}` | sequence number |
+| `{ack}` | downlink requested, `true` / `false` |
+| `{rssi}` | best RSSI (dBm) |
+| `{snr}` | always `0` (not available with ESP-NOW) |
+| `{station}` | lower 4 bytes of the gateway MAC (hex) |
+| `{nbFrames}` | number of repeats received |
+| `{oob}` | `true` for OOB frames |
+| `{customData#name}` | value decoded with the custom payload format |
 
-### カスタムペイロード設定
+### Custom payload format
 
-`名前:位置:型:引数` を空白区切りで並べる。`位置` を空にする (`名前::型`) と前のフィールドの直後から読む。
+Space-separated `name:offset:type:args` fields. Leaving `offset` empty (`name::type`) reads right after the previous field.
 
-| 型 | 書式 | 例 |
+| Type | Syntax | Example |
 |---|---|---|
-| uint / int | `uint:ビット数[:little-endian]` | `temp::int:16:little-endian` |
-| float | `float:32|64[:little-endian]` | `v::float:32` |
-| bool | `bool:ビット位置` (0=LSB) — 位置のバイトを読み、前進しない | `flag:0:bool:7` |
-| char | `char:バイト数` | `name::char:4` |
+| uint / int | `uint:<bits>[:little-endian]` | `temp::int:16:little-endian` |
+| float | `float:32` or `float:64` (optionally `:little-endian`) | `v::float:32` |
+| bool | `bool:<bit>` (0 = LSB) — reads the byte at offset, does not advance | `flag:0:bool:7` |
+| char | `char:<bytes>` | `name::char:4` |
 
-### ダウンリンク
+### Downlinks
 
-デバイスごとに `none` / `static` (固定 8 バイト) / `callback` を選ぶ。`callback` の場合、
-「ダウンリンク用」にしたコールバックのレスポンスから次のどちらかの形式で 8 バイトを取り出す。
+Each device selects `none` / `static` (fixed 8 bytes) / `callback`. With `callback`, the 8 bytes are
+taken from the response of a callback marked for downlinks, in either of these formats:
 
 ```json
 {"0A1B2C3D": {"downlinkData": "0102030405060708"}}
 {"downlinkData": "0102030405060708"}
 ```
 
-レスポンスが `204 No Content` ならダウンリンクを送らない。
+A `204 No Content` response means no downlink is sent.

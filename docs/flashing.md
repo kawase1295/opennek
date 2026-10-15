@@ -1,32 +1,34 @@
-# ファームウェアの書き込み
+# Flashing the firmware
 
-`opennek-<env>-<version>.bin` は bootloader・パーティション・アプリをまとめた統合イメージで、
-**アドレス 0x0** に書き込むだけで動きます。
+**English** | [日本語](flashing.ja.md)
 
-| ファイル | 用途 | ボード |
+`opennek-<env>-<version>.bin` is a merged image containing the bootloader, partition table and application.
+Just write it to **address 0x0**.
+
+| File | Role | Board |
 |---|---|---|
-| `opennek-gateway-*.bin` | ゲートウェイ (ホストに USB で挿す) | ESP32 DevKit など (CP210x / CH340 経由の USB) |
-| `opennek-device-*.bin` | デバイス (AT モデムエミュレータ) | 同上 |
-| `opennek-gateway-s3-*.bin` | ゲートウェイ | ESP32-S3 (ネイティブ USB) |
-| `opennek-device-s3-*.bin` | デバイス | ESP32-S3 |
+| `opennek-gateway-*.bin` | Gateway (plugged into the host over USB) | ESP32 DevKit etc. (USB via CP210x / CH340) |
+| `opennek-device-*.bin` | Device (AT modem emulator) | same as above |
+| `opennek-gateway-s3-*.bin` | Gateway | ESP32-S3 (native USB) |
+| `opennek-device-s3-*.bin` | Device | ESP32-S3 |
 
-## ブラウザから (Windows / WSL でもおすすめ)
+## From a browser (recommended on Windows / WSL)
 
-1. Chrome / Edge で <https://espressif.github.io/esptool-js/> を開く
-2. **Connect** → ESP32 の COM ポートを選ぶ
-3. Flash Address を `0x0`、File に上の `.bin` を指定して **Program**
+1. Open <https://espressif.github.io/esptool-js/> in Chrome or Edge
+2. Click **Connect** and select the ESP32's COM port
+3. Set Flash Address to `0x0`, choose one of the `.bin` files above, and click **Program**
 
-WSL に USB を渡さずに Windows 側から直接書き込めます。
+This flashes directly from Windows without attaching the USB device to WSL.
 
-## esptool から
+## With esptool
 
 ```bash
 esptool.py --chip esp32 write_flash 0x0 opennek-gateway-0.1.0.bin
 ```
 
-ESP32-S3 は `--chip esp32s3`。
+Use `--chip esp32s3` for ESP32-S3.
 
-## ソースから (PlatformIO)
+## From source (PlatformIO)
 
 ```bash
 cd firmware

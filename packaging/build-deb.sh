@@ -29,7 +29,7 @@ if [[ -z "${SKIP_FIRMWARE:-}" ]]; then
     "$PIO_PY" "$ESPTOOL" --chip $chip merge_bin -o "$FWDIR/opennek-$env-$VERSION.bin" \
       $boot "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0xe000 "$BOOT_APP0" 0x10000 "$B/firmware.bin" >/dev/null
   done
-  cp "$ROOT/docs/flashing.md" "$FWDIR/README.md"
+  cp "$ROOT/docs/flashing.md" "$ROOT/docs/flashing.ja.md" "$FWDIR/"
 fi
 
 install -Dm644 /dev/stdin "$STAGE/usr/share/applications/opennek.desktop" <<DESKTOP
@@ -56,6 +56,7 @@ SERVICE
 
 install -Dm644 "$ROOT/LICENSE" "$STAGE/usr/share/doc/opennek/copyright"
 install -Dm644 "$ROOT/docs/protocol.md" "$STAGE/usr/share/doc/opennek/protocol.md"
+install -Dm644 "$ROOT/docs/protocol.ja.md" "$STAGE/usr/share/doc/opennek/protocol.ja.md"
 
 mkdir -p "$STAGE/DEBIAN"
 cat > "$STAGE/DEBIAN/control" <<CONTROL
