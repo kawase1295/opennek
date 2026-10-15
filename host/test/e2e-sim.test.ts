@@ -105,6 +105,6 @@ test('frame signed with a wrong key is flagged and not forwarded', async () => {
 
 test('CSV export', async () => {
   const csv = await (await call('/messages.csv')).text()
-  expect(csv.split('\n')[0]).toBe('id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus')
+  expect(csv.split('\n')[0]).toBe('id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus,radio')
   expect(csv).toContain('"{""temp"":-123}"')
 })

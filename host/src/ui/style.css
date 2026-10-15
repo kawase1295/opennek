@@ -116,6 +116,8 @@ td .decoded { display: block; color: var(--muted); font-size: 12px; white-space:
 .badge.warn { color: var(--warn); }
 .badge.bad { color: var(--bad); }
 .badge.muted { color: var(--muted); }
+.badge.sigfox { color: var(--accent); }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .form { display: flex; flex-direction: column; gap: 10px; }
 .form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }

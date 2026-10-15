@@ -1,4 +1,4 @@
-import { closeSync, constants, createReadStream, existsSync, openSync, readdirSync, realpathSync, writeSync, type ReadStream } from 'node:fs'
+import { constants, createReadStream, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
 import { Gateway } from './gateway'
 
 // Linux のシリアルポートを stty で raw 115200 にして直接読み書きする (ネイティブアドオン不要)
@@ -30,20 +30,74 @@ export function listSerialPorts(): SerialPortInfo[] {
   return ports
 }
 
-export function pickSerialPort(): string | null {
-  const ports = listSerialPorts()
+// exclude: a port used by something else (the Sigfox receiver), compared after resolving symlinks
+export function pickSerialPort(exclude: string[] = []): string | null {
+  const real = (p: string) => {
+    try {
+      return realpathSync(p)
+    } catch {
+      return p
+    }
+  }
+  const skip = new Set(exclude.filter(Boolean).map(real))
+  const ports = listSerialPorts().filter((p) => !skip.has(p.path))
   return (ports.find((p) => LIKELY_ESP32.test(p.label)) ?? ports[0])?.path ?? null
 }
 
+export type LinePort = { write(line: string): void; close(): Promise<void> }
+
+// raw 115200 にしたポートを行単位で読む。stty や open の失敗は例外 (権限不足ならヒント付き)
+export function openLinePort(port: string, onLine: (line: string) => void, onError: (e: unknown) => void): LinePort {
+  const stty = Bun.spawnSync(['stty', '-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { stderr: 'pipe' })
+  if (stty.exitCode !== 0) {
+    const err = stty.stderr.toString().trim()
+    const hint = /permission denied/i.test(err) ? ' — `sudo usermod -aG dialout $USER` して再ログインしてください' : ''
+    throw new Error(`${err}${hint}`)
+  }
+  const fd = openSync(port, constants.O_RDWR | constants.O_NOCTTY)
+  let buf = ''
+  // fd はストリームに持たせる (Bun は autoClose: false でも destroy 時に fd を閉じるため)
+  const stream = createReadStream('', { fd, encoding: 'utf8' })
+  let open = true
+  stream.on('data', (chunk) => {
+    buf += chunk
+    let i: number
+    while ((i = buf.indexOf('\n')) >= 0) {
+      onLine(buf.slice(0, i))
+      buf = buf.slice(i + 1)
+    }
+    if (buf.length > 4096) buf = ''
+  })
+  stream.on('error', (e) => open && onError(e))
+  stream.on('end', () => open && onError(new Error('port closed')))
+  return {
+    write(line) {
+      if (open) writeSync(fd, `${line}\n`)
+    },
+    // fd が実際に閉じるまで待てるようにする (fd 番号の再利用で別のファイルを閉じないように)
+    close() {
+      if (!open) return Promise.resolve()
+      open = false
+      return new Promise((resolve) => {
+        stream.once('close', () => resolve())
+        stream.destroy()
+      })
+    },
+  }
+}
+
 export class SerialGateway extends Gateway {
-  private fd: number | null = null
-  private stream: ReadStream | null = null
+  private port: LinePort | null = null
   private retry: Timer | null = null
   private helloTimer: Timer | null = null
   private stopped = true
   private closing: Promise<void> = Promise.resolve()
 
-  constructor(private portSetting: () => string) {
+  // exclude: ポート自動検出で選ばないポート (Sigfox 受信機など)
+  constructor(
+    private portSetting: () => string,
+    private exclude: () => string[] = () => [],
+  ) {
     super('serial')
   }
 
@@ -66,9 +120,9 @@ export class SerialGateway extends Gateway {
   }
 
   protected writeLine(line: string) {
-    if (this.fd === null) return
+    if (!this.port) return
     try {
-      writeSync(this.fd, `${line}\n`)
+      this.port.write(line)
     } catch (e) {
       this.fail(e)
     }
@@ -76,45 +130,24 @@ export class SerialGateway extends Gateway {
 
   private async connect() {
     await this.closing
-    if (this.stopped || this.fd !== null) return
+    if (this.stopped || this.port) return
     const setting = this.portSetting()
-    const port = setting === 'auto' ? pickSerialPort() : setting
-    if (!port) {
+    const path = setting === 'auto' ? pickSerialPort(this.exclude()) : setting
+    if (!path) {
       this.setStatus({ state: 'disconnected', port: null, error: 'シリアルポートが見つかりません (ゲートウェイ ESP32 を接続してください)' })
       return this.scheduleRetry()
     }
-    this.setStatus({ state: 'connecting', port, error: undefined })
-    const stty = Bun.spawnSync(['stty', '-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { stderr: 'pipe' })
-    if (stty.exitCode !== 0) {
-      const err = stty.stderr.toString().trim()
-      const hint = /permission denied/i.test(err) ? ' — `sudo usermod -aG dialout $USER` して再ログインしてください' : ''
-      this.setStatus({ state: 'disconnected', error: `${err}${hint}` })
-      return this.scheduleRetry()
-    }
+    this.setStatus({ state: 'connecting', port: path, error: undefined })
     try {
-      this.fd = openSync(port, constants.O_RDWR | constants.O_NOCTTY)
+      this.port = openLinePort(path, (line) => this.handleLine(line), (e) => this.fail(e))
     } catch (e) {
-      this.setStatus({ state: 'disconnected', error: String(e) })
+      this.setStatus({ state: 'disconnected', error: e instanceof Error ? e.message : String(e) })
       return this.scheduleRetry()
     }
-    let buf = ''
-    // fd はストリームに持たせる (Bun は autoClose: false でも destroy 時に fd を閉じるため)
-    this.stream = createReadStream('', { fd: this.fd, encoding: 'utf8' })
-    this.stream.on('data', (chunk) => {
-      buf += chunk
-      let i: number
-      while ((i = buf.indexOf('\n')) >= 0) {
-        this.handleLine(buf.slice(0, i))
-        buf = buf.slice(i + 1)
-      }
-      if (buf.length > 4096) buf = ''
-    })
-    this.stream.on('error', (e) => this.fail(e))
-    this.stream.on('end', () => this.fail(new Error('port closed')))
-    this.log(`serial: opened ${port}`)
+    this.log(`serial: opened ${path}`)
     // 起動直後の hello を取りこぼしても ping で取り直す
     const askHello = (n: number) => {
-      if (this.fd === null || this.st.state === 'connected') return
+      if (!this.port || this.st.state === 'connected') return
       if (n === 0) {
         this.setStatus({ error: 'ゲートウェイから応答がありません (OpenNEK ゲートウェイのファームを書き込んでください)' })
       }
@@ -125,7 +158,7 @@ export class SerialGateway extends Gateway {
   }
 
   private fail(e: unknown) {
-    if (this.fd === null) return
+    if (!this.port) return
     this.log(`serial: ${e instanceof Error ? e.message : String(e)}`)
     this.close()
     this.setStatus({ state: 'disconnected', error: 'ゲートウェイとの接続が切れました' })
@@ -134,18 +167,8 @@ export class SerialGateway extends Gateway {
 
   private close() {
     if (this.helloTimer) clearTimeout(this.helloTimer)
-    const stream = this.stream
-    if (stream) {
-      // fd が実際に閉じるまで次の接続を始めない (fd 番号の再利用で別のファイルを閉じないように)
-      this.closing = new Promise((resolve) => stream.once('close', () => resolve()))
-      stream.destroy()
-    } else if (this.fd !== null) {
-      try {
-        closeSync(this.fd)
-      } catch {}
-    }
-    this.stream = null
-    this.fd = null
+    if (this.port) this.closing = this.port.close()
+    this.port = null
     if (this.st.state !== 'disconnected') this.setStatus({ state: 'disconnected' })
   }
 

@@ -19,7 +19,10 @@
         <button data-tab="callbacks">コールバック</button>
         <button data-tab="settings">設定</button>
       </nav>
-      <div id="gw" class="pill" title="ゲートウェイ">—</div>
+      <div class="pills">
+        <div id="gw" class="pill" title="ゲートウェイ">—</div>
+        <div id="radio" class="pill hidden" title="Sigfox 受信機">—</div>
+      </div>
     </header>
 
     <main>
@@ -44,7 +47,7 @@
         <div class="table-wrap">
           <table id="msg-table">
             <thead>
-              <tr><th>時刻</th><th>デバイス</th><th>Seq</th><th>データ</th><th>RSSI</th><th>フレーム</th><th>認証</th><th>ダウンリンク</th></tr>
+              <tr><th>時刻</th><th>無線</th><th>デバイス</th><th>Seq</th><th>データ</th><th>RSSI</th><th>フレーム</th><th>認証</th><th>ダウンリンク</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -93,6 +96,10 @@
           <h3>ゲートウェイ</h3>
           <dl id="gw-detail" class="kv"></dl>
         </div>
+        <div class="card">
+          <h3>Sigfox 受信機</h3>
+          <dl id="radio-detail" class="kv"></dl>
+        </div>
         <form id="settings-form" class="card form">
           <h3>無線とホスト</h3>
           <label>シリアルポート<select name="serialPort"></select></label>
@@ -102,6 +109,10 @@
             <small>3 回の repeat をまとめるために最初のフレームから待つ時間。</small></label>
           <label>ダウンリンク / コールバックのタイムアウト (ms)<input name="downlinkTimeoutMs" type="number" min="500" max="30000" required /></label>
           <label class="check"><input type="checkbox" name="acceptUnknownDevices" />鍵が未登録のデバイスもコールバックを実行する</label>
+          <h3>Sigfox 受信機 (RC3)</h3>
+          <label>受信機のポート<select name="sigfoxPort"></select>
+            <small>RSSI ストリーマ (firmware-lsm100a) を書き込んだ受信機。本物の Sigfox デバイスのアップリンクを受信します (受信のみ)。</small></label>
+          <label>受信周波数 (Hz)<input name="sigfoxFreq" type="number" min="862000000" max="928000000" step="100" required /></label>
           <div class="actions"><button class="primary">保存</button><span id="settings-saved" class="muted"></span></div>
         </form>
       </section>

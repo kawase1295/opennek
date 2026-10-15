@@ -27,7 +27,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500)
 }
 
-const state = { devices: [], callbacks: [], messages: new Map(), gateway: null, settings: null }
+const state = { devices: [], callbacks: [], messages: new Map(), gateway: null, radio: null, settings: null }
 
 // ---------------- tabs
 function showTab(name) {
@@ -61,6 +61,35 @@ function renderGateway(g) {
     .join('')
 }
 
+// ---------------- Sigfox receiver
+function renderRadio(r) {
+  state.radio = r
+  const pill = $('#radio')
+  pill.classList.toggle('hidden', !r || r.state === 'off')
+  const label = { off: '無効', connected: '受信中', connecting: '応答待ち', disconnected: '未接続' }[r?.state ?? 'off']
+  if (r && r.state !== 'off') {
+    pill.className = `pill ${r.state}`
+    pill.textContent = `Sigfox · ${r.state === 'connected' && r.freq ? `${(r.freq / 1e6).toFixed(1)} MHz` : label}`
+    pill.title = r.error || r.port || ''
+  }
+  $('#radio-detail').innerHTML = (
+    r && r.state !== 'off'
+      ? [
+          ['状態', `${label}${r.error ? ` — ${esc(r.error)}` : ''}`],
+          ['ポート', esc(r.port ?? '—')],
+          ['ファームウェア', esc(r.fw ?? '—')],
+          ['周波数', r.freq ? `${(r.freq / 1e6).toFixed(3)} MHz` : '—'],
+          ['サンプリング', r.rate ? `${r.rate} Hz` : '—'],
+          ['受信フレーム', `${r.frames} (CRC エラー ${r.badFrames})`],
+          ['最終受信', fmtTime(r.lastFrameAt)],
+          ['欠落行', r.lostLines],
+        ]
+      : [['状態', '無効 (下の設定で受信機のポートを選ぶと有効になります)']]
+  )
+    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
+    .join('')
+}
+
 // ---------------- messages
 const msgBody = $('#msg-table tbody')
 const DL_BADGE = {
@@ -69,6 +98,11 @@ const DL_BADGE = {
   sent: '<span class="badge ok">送信済</span>',
   failed: '<span class="badge bad">失敗</span>',
   nodata: '<span class="badge muted">データなし</span>',
+  unsupported: '<span class="badge muted">受信専用</span>',
+}
+const RADIO_BADGE = {
+  espnow: '<span class="badge muted">ESP-NOW</span>',
+  sigfox: '<span class="badge sigfox">Sigfox</span>',
 }
 const AUTH_BADGE = {
   ok: '<span class="badge ok">OK</span>',
@@ -90,7 +124,7 @@ function messageRow(m) {
       )}</span>`
     : ''
   const dl = m.ack ? `${DL_BADGE[m.downlinkStatus] ?? ''} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : m.oob ? '<span class="badge muted">OOB</span>' : ''
-  return `<td>${fmtTime(m.time)}</td><td>${deviceLabel(m.deviceId)}</td><td>${m.seq}</td>
+  return `<td>${fmtTime(m.time)}</td><td>${RADIO_BADGE[m.radio] ?? ''}</td><td>${deviceLabel(m.deviceId)}</td><td>${m.seq}</td>
     <td class="data">${spaced(m.data)}${decoded}</td><td>${m.rssi} dBm</td><td>${m.nbFrames}/3</td>
     <td>${AUTH_BADGE[m.auth]}</td><td>${dl}</td>`
 }
@@ -145,7 +179,8 @@ msgBody.addEventListener('click', async (e) => {
     ['ID', m.id],
     ['時刻', fmtTime(m.time)],
     ['デバイス', deviceLabel(m.deviceId)],
-    ['送信元 MAC', esc(m.src)],
+    ['無線', RADIO_BADGE[m.radio] ?? esc(m.radio)],
+    m.radio === 'sigfox' ? ['受信', 'Sigfox 受信機 (認証は未検証)'] : ['送信元 MAC', esc(m.src)],
     ['Seq', m.seq],
     ['データ', `<code>${spaced(m.data)}</code>`],
     ['デコード', m.decoded ? `<code>${esc(JSON.stringify(m.decoded))}</code>` : '—'],
@@ -389,6 +424,11 @@ async function loadSettings() {
   f.serialPort.innerHTML = opts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path !== 'auto' && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.serialPort.value = s.serialPort
   f.serialPort.disabled = state.gateway?.kind === 'sim'
+  const sfOpts = [{ path: '', label: '使わない' }, ...ports]
+  if (!sfOpts.some((p) => p.path === s.sigfoxPort)) sfOpts.push({ path: s.sigfoxPort, label: s.sigfoxPort })
+  f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
+  f.sigfoxPort.value = s.sigfoxPort
+  f.sigfoxFreq.value = s.sigfoxFreq
   f.channel.value = s.channel
   f.dedupWindowMs.value = s.dedupWindowMs
   f.downlinkTimeoutMs.value = s.downlinkTimeoutMs
@@ -406,6 +446,8 @@ $('#settings-form').addEventListener('submit', async (e) => {
         dedupWindowMs: Number(f.dedupWindowMs.value),
         downlinkTimeoutMs: Number(f.downlinkTimeoutMs.value),
         acceptUnknownDevices: f.acceptUnknownDevices.checked,
+        sigfoxPort: f.sigfoxPort.value,
+        sigfoxFreq: Number(f.sigfoxFreq.value),
       },
     })
     toast('保存しました')
@@ -421,6 +463,7 @@ function connectEvents() {
     const data = JSON.parse(e.data)
     renderGateway(data.status ?? data)
   })
+  es.addEventListener('radio', (e) => renderRadio(JSON.parse(e.data).status))
   es.addEventListener('message', (e) => {
     const { message } = JSON.parse(e.data)
     if (!state.devices.some((d) => d.id === message.deviceId)) loadDevices()
@@ -436,6 +479,7 @@ function connectEvents() {
 ;(async () => {
   const status = await api('/status')
   renderGateway(status.gateway)
+  renderRadio(status.radio)
   await Promise.all([loadDevices(), loadCallbacks()])
   await loadMessages()
   connectEvents()

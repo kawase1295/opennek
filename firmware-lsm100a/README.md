@@ -64,6 +64,21 @@ Prints every frame (repetition, CRC, RSSI, receiver clock error) and one line pe
 repetitions are merged. Verified with a real RC3 device: 1- and 5-byte payloads and the downlink request
 flag decode with a valid CRC; the LSM100A's RC clock runs about 1.3 % slow and is tracked automatically.
 
+## Receive in the OpenNEK host
+
+The host can run the same decoder next to the ESP-NOW gateway. Real Sigfox messages then appear in the
+Web UI (marked "Sigfox"), in the device list, and trigger the Sigfox-compatible callbacks:
+
+```bash
+cd host && bun src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
+```
+
+The port is remembered; pick it (or "使わない" to turn the receiver off) under Settings → Sigfox 受信機.
+An auto-detected ESP-NOW gateway never takes the receiver's port. Limits for now: the receiver only
+listens, so a requested downlink is shown as "受信専用" (receive only), and uplink authentication is not
+checked yet, so messages count as from unregistered devices (callbacks run while "鍵が未登録のデバイスも
+コールバックを実行する" is on).
+
 ## Standalone tester (M5Stack Cardputer)
 
 The Cardputer can decode on its own, without a PC, and check a device under test:

@@ -32,7 +32,7 @@ const csvCell = (v: unknown) => {
 }
 
 export function createApp(engine: Engine) {
-  const { store, gateway } = engine
+  const { store, gateway, sigfox } = engine
   const app = new Hono()
 
   app.onError((err, c) => c.json({ error: err.message }, 500))
@@ -44,7 +44,7 @@ export function createApp(engine: Engine) {
 
   const api = new Hono()
 
-  api.get('/status', (c) => c.json({ version: VERSION, gateway: gateway.status(), settings: store.getSettings() }))
+  api.get('/status', (c) => c.json({ version: VERSION, gateway: gateway.status(), radio: sigfox?.status() ?? null, settings: store.getSettings() }))
 
   // --- settings
   api.get('/settings', (c) => c.json(store.getSettings()))
@@ -54,10 +54,14 @@ export function createApp(engine: Engine) {
     if (!r.ok) return c.json({ error: r.error }, 400)
     store.saveSettings(r.data)
     if (r.data.channel !== before.channel) gateway.setChannel(r.data.channel)
-    if (r.data.serialPort !== before.serialPort && gateway instanceof SerialGateway) gateway.reconnect()
+    const sigfoxChanged = r.data.sigfoxPort !== before.sigfoxPort || r.data.sigfoxFreq !== before.sigfoxFreq
+    // 自動検出のゲートウェイは Sigfox 受信機のポートを避けるので、それが変わったときも繋ぎ直す
+    const gatewayChanged = r.data.serialPort !== before.serialPort || (r.data.serialPort === 'auto' && r.data.sigfoxPort !== before.sigfoxPort)
+    if (sigfoxChanged) sigfox?.reconnect()
+    if (gatewayChanged && gateway instanceof SerialGateway) gateway.reconnect()
     return c.json(r.data)
   })
-  api.get('/serial/ports', (c) => c.json(gateway instanceof SerialGateway ? listSerialPorts() : []))
+  api.get('/serial/ports', (c) => c.json(listSerialPorts()))
 
   // --- devices
   api.get('/devices', (c) => c.json(store.listDevices()))
@@ -88,7 +92,7 @@ export function createApp(engine: Engine) {
   })
   api.get('/messages.csv', (c) => {
     const rows = store.listMessages({ deviceId: c.req.query('device')?.toUpperCase() || undefined, limit: 1000 })
-    const cols = ['id', 'time', 'deviceId', 'seq', 'data', 'decoded', 'ack', 'oob', 'rssi', 'nbFrames', 'auth', 'downlink', 'downlinkStatus'] as const
+    const cols = ['id', 'time', 'deviceId', 'seq', 'data', 'decoded', 'ack', 'oob', 'rssi', 'nbFrames', 'auth', 'downlink', 'downlinkStatus', 'radio'] as const
     const lines = [cols.join(','), ...rows.map((m) => cols.map((k) => csvCell(k === 'time' ? new Date(m.time).toISOString() : m[k])).join(','))]
     return c.body(`${lines.join('\n')}\n`, 200, {
       'Content-Type': 'text/csv; charset=utf-8',
@@ -120,7 +124,7 @@ export function createApp(engine: Engine) {
     const latest = store.listMessages({ limit: 50 }).find((m) => appliesTo(cb, m.deviceId))
     const m = latest ?? {
       id: 0, deviceId: 'F0000001', time: Date.now(), seq: 0, data: '0102030405', ack: cb.downlink, oob: false, rssi: -60,
-      nbFrames: 3, auth: 'ok' as const, src: '02:00:00:00:00:00', station: '00000000', decoded: null, downlink: null, downlinkStatus: 'none' as const,
+      nbFrames: 3, auth: 'ok' as const, src: '02:00:00:00:00:00', station: '00000000', radio: 'espnow' as const, decoded: null, downlink: null, downlinkStatus: 'none' as const,
     }
     const result = await runCallback(cb, m, store.getDevice(m.deviceId)?.name ?? '', store.getSettings().downlinkTimeoutMs)
     return c.json({ message: m, result })
@@ -178,6 +182,7 @@ export function createApp(engine: Engine) {
         wake?.()
       })
       await stream.writeSSE({ event: 'gateway', data: JSON.stringify(gateway.status()) })
+      if (sigfox) await stream.writeSSE({ event: 'radio', data: JSON.stringify({ type: 'radio', status: sigfox.status() }) })
       while (!stream.aborted) {
         const e = queue.shift()
         if (e) {
