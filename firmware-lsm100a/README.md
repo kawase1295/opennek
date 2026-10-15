@@ -64,6 +64,36 @@ Prints every frame (repetition, CRC, RSSI, receiver clock error) and one line pe
 repetitions are merged. Verified with a real RC3 device: 1- and 5-byte payloads and the downlink request
 flag decode with a valid CRC; the LSM100A's RC clock runs about 1.3 % slow and is tracked automatically.
 
+## Standalone tester (M5Stack Cardputer)
+
+The Cardputer can decode on its own, without a PC, and check a device under test:
+
+```bash
+cd firmware && pio run -e tester-cardputer -t upload    # replaces the bridge; flash bridge-s3 to go back
+```
+
+Keep the LSM100A on Grove G1/G2 as above. Press `L` and send one message from the device to register it
+(or `I` to type its ID). Every message of a registered device is then checked and shown as PASS / WARN / FAIL:
+
+| Check | Result |
+|---|---|
+| All three repetitions received with a valid CRC | WARN when one or two are missing |
+| Sequence number is the previous one + 1 | WARN on a gap, a repeat or a step back |
+| Payload equals the expected value (`P`, optional) | FAIL on a mismatch |
+| Signal at least 25 dB above the noise floor | WARN when weaker |
+
+Other keys: `D` registered devices (`1`-`8` removes one), `H` history, `M` mute, `R` reset counters,
+`` ` `` back. With a microSD card, results are appended to `/opennek/tester.csv` and the last 30 s of RSSI
+samples are saved next to every WARN/FAIL result (`/opennek/raw-*.rssi`, the same format as
+`host/test/fixtures`). USB serial prints one JSON line per result and a health line every 10 s.
+
+The tester only receives: the LSM100A firmware never transmits and the Cardputer firmware never starts
+Wi-Fi or Bluetooth. Messages from devices that are not registered are neither shown nor logged (learn mode
+only offers the ID of the next device it hears).
+
+The decoder is a C++ port of `host/src/sigfox` (`firmware/lib/SigfoxRx`); `firmware/test/sigfox_native_test.cpp`
+checks that it gives the same results on the recorded captures.
+
 ## Serial protocol (115200 bps)
 
 | Direction | Line | Meaning |

@@ -165,6 +165,8 @@ opennek --open               # または: systemctl --user enable --now opennek
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -I ../lib/OpenNEK/src \
   frame_native_test.cpp ../lib/OpenNEK/src/OpenNekFrame.cpp -o frame_test && ./frame_test)
+(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
+  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)
 ```
 
 ホストのテストには、シミュレータを使った E2E テスト（アップリンク → コールバック → ダウンリンク）と、

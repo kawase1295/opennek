@@ -64,6 +64,36 @@ cd host && bun tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
 1 行ずつ表示します。実機の RC3 デバイスで、1 バイト・5 バイトのペイロードとダウンリンク要求フラグが
 CRC 込みで正しく解読できることを確認済みです。LSM100A の RC 発振器は約 1.3% 遅れていますが、自動で追従します。
 
+## 単体テスター (M5Stack Cardputer)
+
+PC なしで Cardputer だけで解読し、テスト対象のデバイスを検査できます。
+
+```bash
+cd firmware && pio run -e tester-cardputer -t upload    # 中継用ファームを置き換えます。戻すときは bridge-s3 を書き込みます
+```
+
+LSM100A は上と同じく Grove の G1/G2 につなぎます。`L` を押してデバイスから 1 回送信すると登録されます
+（`I` で ID を手入力することもできます）。登録したデバイスのメッセージごとに検査して、PASS / WARN / FAIL を表示します。
+
+| 検査 | 結果 |
+|---|---|
+| 3 回の送信がすべて CRC 正常で届いたか | 1〜2 回欠けたら WARN |
+| 連番が前回 + 1 か | 飛び・重複・逆戻りは WARN |
+| ペイロードが期待値と同じか（`P` で設定、任意） | 違えば FAIL |
+| 雑音レベルより 25dB 以上強いか | 弱ければ WARN |
+
+ほかのキー: `D` 登録済みデバイス（`1`〜`8` で削除）、`H` 履歴、`M` 消音、`R` 集計のリセット、`` ` `` 戻る。
+microSD カードを入れると、結果を `/opennek/tester.csv` に追記し、WARN/FAIL のたびに直前 30 秒の RSSI を
+`/opennek/raw-*.rssi`（`host/test/fixtures` と同じ形式）に保存します。USB シリアルには結果ごとに JSON を 1 行、
+10 秒ごとに動作状態を 1 行出力します。
+
+このテスターは受信だけを行います。LSM100A のファームは送信せず、Cardputer のファームも Wi-Fi や Bluetooth を
+起動しません。登録していないデバイスのメッセージは表示も記録もしません（学習モードで、次に受信したデバイスの
+ID を登録候補として示すときだけ例外です）。
+
+解読処理は `host/src/sigfox` を C++ に移植したもの（`firmware/lib/SigfoxRx`）で、`firmware/test/sigfox_native_test.cpp`
+で録音済みデータに対して同じ結果になることを確認しています。
+
 ## シリアルプロトコル (115200bps)
 
 | 向き | 行 | 意味 |
