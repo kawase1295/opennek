@@ -1,0 +1,74 @@
+# LSM100A RSSI streamer
+
+**English** | [日本語](README.ja.md)
+
+Experimental firmware that turns a SEONG JI **LSM100A** (STM32WLE5, Sigfox + LoRa module) into a
+wide-band envelope receiver for real Sigfox uplinks (RC3, 923.2 MHz).
+
+Sigfox uplinks are pulse-shaped DBPSK, so every phase reversal makes the amplitude dip towards zero.
+The firmware keeps the sub-GHz radio in continuous RX with a 234 kHz filter (wider than the 192 kHz
+uplink band) and streams the instantaneous RSSI at 2 kHz; the host turns the dips back into bits.
+
+> Flashing replaces the AT firmware. The Sigfox credentials (ID / PAC / key) of the module may be lost.
+> Use a module you can dedicate as a receiver.
+
+## Wiring
+
+```
+LSM100A (receiver)            M5Stack Cardputer (or any ESP32-S3)          PC
+UART2_TX ──────────────────▶ G1 (GPIO1)
+UART2_RX ◀────────────────── G2 (GPIO2)       USB ─────────────────▶ /dev/ttyACM0
+VCC 3.3 V / GND ──────────── 3.3 V LDO / GND
+```
+
+Any 3.3 V USB-UART adapter works as well. With the Cardputer, flash the bridge first; it follows the
+baud rate the PC opens the port with:
+
+```bash
+cd firmware && pio run -e bridge-s3 -t upload
+```
+
+## Build and flash
+
+```bash
+cd firmware-lsm100a && pio run                       # .pio/build/lsm100a/firmware.bin
+cd host && bun tools/lsm-flash.ts /dev/ttyACM0 ../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
+```
+
+`lsm-flash.ts` resets the module (ATZ for the stock firmware, `X` for this firmware) and talks to the
+IAP bootloader over Ymodem. If the module does not reset by itself, pull RST low briefly (or power-cycle
+it) while "Waiting for the bootloader" is shown.
+
+To go back to the stock AT firmware, flash `FW/LSM100A_SDK_V104_240129.bin` from the
+[LSM100A SDK](https://github.com/Support-SJI/LSM100A) the same way, then run `AT$RFS`.
+
+## Capture
+
+```bash
+cd host && bun tools/rssi-capture.ts /dev/ttyACM0 --out capture
+```
+
+Send a few frames from another Sigfox device (e.g. `AT$SF=0102030405` on a second LSM100A) and stop with
+Ctrl+C. `capture.html` plots every burst; `capture.json` keeps all samples for later analysis.
+
+Options: `--freq <hz>` (default 923200000), `--bw <code>` (SX126x RX bandwidth code, 10 = 234.3 kHz,
+25 = 312 kHz, 9 = 467 kHz), `--rate <hz>` (100-4000), `--boost 0|1`.
+
+## Decode Sigfox uplinks live
+
+```bash
+cd host && bun tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
+```
+
+Prints every frame (repetition, CRC, RSSI, receiver clock error) and one line per message once its
+repetitions are merged. Verified with a real RC3 device: 1- and 5-byte payloads and the downlink request
+flag decode with a valid CRC; the LSM100A's RC clock runs about 1.3 % slow and is tracked automatically.
+
+## Serial protocol (115200 bps)
+
+| Direction | Line | Meaning |
+|---|---|---|
+| out | `I fw=0.1.0 f=923200000 bw=10 sr=2000 boost=1` | status |
+| out | `R<seq>:<64 x 2 hex>` | 64 RSSI samples, dBm = -value / 2 |
+| in | `F<hz>` `W<code>` `S<hz>` `B<0\|1>` | frequency, bandwidth, sample rate, LNA boost |
+| in | `?` / `X` | status / reset (into the IAP bootloader) |

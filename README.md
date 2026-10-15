@@ -19,6 +19,7 @@ Develop and test IoT applications locally — no cloud subscription or radio lic
 |---|---|
 | `host/` | Host server. Bun + Hono + bun:sqlite. Web UI, callbacks, downlinks, simulator |
 | `firmware/` | PlatformIO (Arduino). `gateway` = USB bridge, `device` = Sigfox-style AT modem emulator |
+| `firmware-lsm100a/` | Experimental: LSM100A firmware that streams RSSI to receive real Sigfox RC3 uplinks ([details](firmware-lsm100a/README.md)) |
 | `docs/protocol.md` | Radio frame, serial and callback specification |
 | `packaging/build-deb.sh` | Builds a `.deb` for Ubuntu |
 

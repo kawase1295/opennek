@@ -19,6 +19,7 @@ ESP32 2 台と PC だけで動く、**LPWAN（Sigfox 風）ネットワークの
 |---|---|
 | `host/` | ホスト。Bun + Hono + bun:sqlite。Web UI、コールバック、ダウンリンク、シミュレータ |
 | `firmware/` | PlatformIO (Arduino)。`gateway` = USB ブリッジ、`device` = Sigfox 風 AT モデムエミュレータ |
+| `firmware-lsm100a/` | 実験中: 実機の Sigfox (RC3) アップリンクを受けるため RSSI を流す LSM100A 用ファーム（[詳細](firmware-lsm100a/README.ja.md)） |
 | `docs/protocol.ja.md` | 無線フレーム・シリアル・コールバックの仕様 |
 | `packaging/build-deb.sh` | Ubuntu 向けの `.deb` を作る |
 

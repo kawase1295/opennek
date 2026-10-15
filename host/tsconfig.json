@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "tools"],
   "exclude": ["src/ui/app.js"]
 }
