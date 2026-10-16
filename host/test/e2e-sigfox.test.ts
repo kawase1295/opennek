@@ -105,9 +105,31 @@ describe('authentication of real Sigfox uplinks', () => {
   const lastAuth = (store: Store) => store.listMessages()[0]!.auth
 
   test('a device in public key mode is verified without registering a key', () => {
-    const { store, engine } = setup('', false)
+    const { store, engine } = setup('', true)
     engine.handleSigfox(uplink(PUBLIC_KEY, 1))
-    expect(lastAuth(store)).toBe('ok')
+    expect(lastAuth(store)).toBe('public')
+  })
+
+  test('anyone can sign with the public key, so it does not pass for a registered key', () => {
+    const { store, engine } = setup(Buffer.from(privateKey).toString('hex'), true)
+    engine.handleSigfox(uplink(PUBLIC_KEY, 1))
+    expect(lastAuth(store)).toBe('bad')
+  })
+
+  test('public key uplinks run callbacks only while unknown devices are accepted', async () => {
+    const hits: number[] = []
+    const server = Bun.serve({ port: 0, fetch: () => (hits.push(1), new Response(null, { status: 204 })) })
+    for (const accept of [false, true]) {
+      const { store, engine } = setup('', accept)
+      store.createCallback({
+        name: '', enabled: true, devices: '', method: 'POST', url: `http://127.0.0.1:${server.port}/`, headers: {},
+        contentType: 'application/json', body: '{}', downlink: false,
+      })
+      engine.handleSigfox(uplink(PUBLIC_KEY, 1))
+      for (let i = 0; i < 50 && store.listLogs().length === 0 && accept; i++) await Bun.sleep(10)
+    }
+    server.stop(true)
+    expect(hits).toHaveLength(1)
   })
 
   test('a registered device key is checked', () => {

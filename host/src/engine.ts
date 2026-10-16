@@ -131,12 +131,11 @@ export class Engine {
     void this.finalize(incoming).catch((e) => this.console(`error: ${(e as Error).stack ?? e}`))
   }
 
-  // 公開鍵モードのデバイスは鍵の登録なしで検証できる。秘密鍵は登録されていれば検証する
+  // 登録済みの鍵を優先する。公開鍵は誰でも署名できるので、未登録のデバイスと同じ扱いの 'public' にする
   private sigfoxAuth(m: RadioMessage): Auth {
-    if (verifyUplink(PUBLIC_KEY, m)) return 'ok'
     const key = this.store.getDevice(m.deviceId)?.key
     if (key) return verifyUplink(fromHex(key), m) ? 'ok' : 'bad'
-    return 'unverified'
+    return verifyUplink(PUBLIC_KEY, m) ? 'public' : 'unverified'
   }
 
   private async finalize(f: Incoming) {
@@ -175,7 +174,7 @@ export class Engine {
     this.emit({ type: 'message', message })
 
     // 鍵が合わないフレームはなりすましの可能性があるのでコールバックしない
-    const trusted = f.auth === 'ok' || ((f.auth === 'unknown' || f.auth === 'unverified') && settings.acceptUnknownDevices)
+    const trusted = f.auth === 'ok' || (f.auth !== 'bad' && settings.acceptUnknownDevices)
     const callbacks = trusted ? this.store.listCallbacks().filter((c) => c.enabled && appliesTo(c, f.deviceId)) : []
     const results = await Promise.all(
       callbacks.map(async (cb) => {

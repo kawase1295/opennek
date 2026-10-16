@@ -83,8 +83,8 @@ The authentication field of an uplink can only be checked with the key the devic
 
 | Device | Shown as | Callbacks |
 |---|---|---|
-| Public key mode (see below) | OK | run |
 | Private key registered on the host (device page) | OK, or 鍵不一致 when it does not match | run only when OK |
+| Public key mode (see below), no key registered | 公開鍵 (public key) | run while "鍵が未登録のデバイスもコールバックを実行する" is on |
 | Private key, not registered (the usual case) | 未検証 (unverified) | run while "鍵が未登録のデバイスもコールバックを実行する" is on |
 
 Like the official SNEK, verify a real device by switching it to the public key
@@ -95,7 +95,8 @@ ATS410=1    → public key: OpenNEK can verify the messages; not for use on the 
 ATS410=0    → back to the private key; do this before using the real network again
 ```
 
-Anyone can sign with the public key, so "OK" only shows that the frame is consistent, not who sent it.
+Anyone can sign with the public key, so it only shows that the frame is consistent, not who sent it.
+It is treated like an unregistered device, and a registered key always takes precedence.
 
 ## Standalone tester (M5Stack Cardputer)
 
