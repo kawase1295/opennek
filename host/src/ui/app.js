@@ -108,6 +108,8 @@ const AUTH_BADGE = {
   ok: '<span class="badge ok">OK</span>',
   bad: '<span class="badge bad">鍵不一致</span>',
   unknown: '<span class="badge muted">未登録</span>',
+  public: '<span class="badge muted">公開鍵</span>',
+  unverified: '<span class="badge muted">未検証</span>',
 }
 
 function deviceLabel(id) {

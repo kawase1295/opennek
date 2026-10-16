@@ -4,6 +4,7 @@ import { decodeFrame, encodeFrame, fromHex, toHex, TYPE_DOWNLINK, TYPE_UPLINK, v
 import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
 import type { RadioMessage, RadioStatus, SigfoxRadio } from './gateway/sigfox'
 import { decodePayload } from './payload'
+import { PUBLIC_KEY, verifyUplink } from './sigfox/auth'
 
 export type EngineEvent =
   | { type: 'message'; message: Message }
@@ -122,12 +123,19 @@ export class Engine {
       oob: false,
       rssi: Math.round(m.rssi),
       nbFrames: m.ranks.length,
-      auth: 'unknown', // 認証の検証は未対応 (#4)
+      auth: this.sigfoxAuth(m),
       src: 'sigfox',
       station: SIGFOX_STATION,
       time: m.receivedAt,
     }
     void this.finalize(incoming).catch((e) => this.console(`error: ${(e as Error).stack ?? e}`))
+  }
+
+  // 登録済みの鍵を優先する。公開鍵は誰でも署名できるので、未登録のデバイスと同じ扱いの 'public' にする
+  private sigfoxAuth(m: RadioMessage): Auth {
+    const key = this.store.getDevice(m.deviceId)?.key
+    if (key) return verifyUplink(fromHex(key), m) ? 'ok' : 'bad'
+    return verifyUplink(PUBLIC_KEY, m) ? 'public' : 'unverified'
   }
 
   private async finalize(f: Incoming) {
@@ -166,7 +174,7 @@ export class Engine {
     this.emit({ type: 'message', message })
 
     // 鍵が合わないフレームはなりすましの可能性があるのでコールバックしない
-    const trusted = f.auth === 'ok' || (f.auth === 'unknown' && settings.acceptUnknownDevices)
+    const trusted = f.auth === 'ok' || (f.auth !== 'bad' && settings.acceptUnknownDevices)
     const callbacks = trusted ? this.store.listCallbacks().filter((c) => c.enabled && appliesTo(c, f.deviceId)) : []
     const results = await Promise.all(
       callbacks.map(async (cb) => {

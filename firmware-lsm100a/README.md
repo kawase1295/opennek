@@ -75,9 +75,28 @@ cd host && bun src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 
 The port is remembered; pick it (or "使わない" to turn the receiver off) under Settings → Sigfox 受信機.
 An auto-detected ESP-NOW gateway never takes the receiver's port. Limits for now: the receiver only
-listens, so a requested downlink is shown as "受信専用" (receive only), and uplink authentication is not
-checked yet, so messages count as from unregistered devices (callbacks run while "鍵が未登録のデバイスも
-コールバックを実行する" is on).
+listens, so a requested downlink is shown as "受信専用" (receive only).
+
+### Uplink authentication
+
+The authentication field of an uplink can only be checked with the key the device signed it with:
+
+| Device | Shown as | Callbacks |
+|---|---|---|
+| Private key registered on the host (device page) | OK, or 鍵不一致 when it does not match | run only when OK |
+| Public key mode (see below), no key registered | 公開鍵 (public key) | run while "鍵が未登録のデバイスもコールバックを実行する" is on |
+| Private key, not registered (the usual case) | 未検証 (unverified) | run while "鍵が未登録のデバイスもコールバックを実行する" is on |
+
+Like the official SNEK, verify a real device by switching it to the public key
+(`00112233445566778899AABBCCDDEEFF`, defined by sigfox-ep-lib). On LSM100A / AX modules:
+
+```
+ATS410=1    → public key: OpenNEK can verify the messages; not for use on the real network
+ATS410=0    → back to the private key; do this before using the real network again
+```
+
+Anyone can sign with the public key, so it only shows that the frame is consistent, not who sent it.
+It is treated like an unregistered device, and a registered key always takes precedence.
 
 ## Standalone tester (M5Stack Cardputer)
 
