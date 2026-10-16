@@ -7,13 +7,16 @@
 // Output lines:
 //   I fw=0.1.0 f=923200000 bw=10 sr=2000 boost=1     status (on boot and in reply to "?")
 //   R<seq:4 hex>:<64 samples as 2 hex digits>         raw RSSI, dBm = -value / 2
+//   C<seq:4 hex>:<8 values as 3 hex digits>           GFSK carrier frequency offset (only with C1), one value
+//                                                     per 8 RSSI samples of the R line with the same seq
 // Commands (one per line):
 //   F<hz>   RX frequency            W<n>  RX bandwidth code (SX126x RX_BW, 10 = 234.3 kHz)
 //   S<hz>   sample rate (100-4000)  B<0|1> boosted LNA gain
+//   C<0|1>  stream the CFO register P<n>  preamble detector code (0 = off, 4 = 8 bits, ...)
 //   ?       status                  X     reset (send '1' right after to enter the IAP bootloader)
 #include <Arduino.h>
 
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.2.0"
 
 // LSM100A radio board configuration (LSM_RF_CHANNEL_SWITCH = 1 in the SDK)
 #define RF_CTRL1 PB12
@@ -22,6 +25,9 @@
 #define XTAL_HZ 32000000ULL
 
 #define LINE_SAMPLES 64
+#define CFO_EVERY 8
+// GFSK carrier frequency offset, 12 bit signed (STM32WL RM0461 GCFORH/GCFORL; not in the SX126x datasheet)
+#define REG_GCFORH 0x06B0
 
 static Uart link(PA3, PA2);
 static SUBGHZ_HandleTypeDef hsubghz;
@@ -30,6 +36,9 @@ static uint32_t freqHz = 923200000;  // Sigfox RC3 uplink centre
 static uint8_t bwCode = 0x0A;        // 234.3 kHz covers the 192 kHz uplink band
 static uint32_t sampleHz = 2000;     // 20 samples per bit at 100 bps
 static bool boost = true;
+static bool cfoOn = false;
+static uint8_t preambleDetector = 0x04;
+static uint16_t cfo[LINE_SAMPLES / CFO_EVERY];
 
 static uint8_t samples[LINE_SAMPLES];
 static uint8_t nSamples = 0;
@@ -73,7 +82,7 @@ static void configureRx() {
   put24(mod + 5, (uint32_t)((25000ULL << 25) / XTAL_HZ));  // 25 kHz deviation
   radioCmd(RADIO_SET_MODULATIONPARAMS, mod, 8);
 
-  const uint8_t pkt[9] = {0x00, 0x08, 0x04, 0x40, 0x00, 0x00, 0xFF, 0x01, 0x00};
+  const uint8_t pkt[9] = {0x00, 0x08, preambleDetector, 0x40, 0x00, 0x00, 0xFF, 0x01, 0x00};
   radioCmd(RADIO_SET_PACKETPARAMS, pkt, 9);
   const uint8_t sync[8] = {0x9C, 0x3B, 0x51, 0xE7, 0x2A, 0xD4, 0x68, 0x0F};
   HAL_SUBGHZ_WriteRegisters(&hsubghz, 0x06C0, const_cast<uint8_t*>(sync), 8);
@@ -111,9 +120,9 @@ static bool initRadio() {
 }
 
 static void printStatus() {
-  char s[80];
-  int n = snprintf(s, sizeof(s), "I fw=%s f=%lu bw=%u sr=%lu boost=%u\n", FW_VERSION, (unsigned long)freqHz, bwCode,
-                   (unsigned long)sampleHz, boost ? 1 : 0);
+  char s[96];
+  int n = snprintf(s, sizeof(s), "I fw=%s f=%lu bw=%u sr=%lu boost=%u cfo=%u pd=%u\n", FW_VERSION, (unsigned long)freqHz,
+                   bwCode, (unsigned long)sampleHz, boost ? 1 : 0, cfoOn ? 1 : 0, preambleDetector);
   link.write(s, n);
 }
 
@@ -131,6 +140,12 @@ static void handleCommand(const char* c) {
       break;
     case 'B':
       boost = v != 0;
+      break;
+    case 'C':
+      cfoOn = v != 0;
+      break;
+    case 'P':
+      if (v >= 0 && v <= 7) preambleDetector = v;
       break;
     case 'X':
       link.flush();
@@ -173,6 +188,16 @@ static void flushLine() {
   }
   *p++ = '\n';
   link.write(line, p - line);
+  if (cfoOn) {
+    p = line;
+    *p++ = 'C';
+    for (int s = 12; s >= 0; s -= 4) *p++ = digits[(lineSeq >> s) & 0xF];
+    *p++ = ':';
+    for (uint8_t i = 0; i < nSamples / CFO_EVERY; i++)
+      for (int s = 8; s >= 0; s -= 4) *p++ = digits[(cfo[i] >> s) & 0xF];
+    *p++ = '\n';
+    link.write(line, p - line);
+  }
   lineSeq++;
   nSamples = 0;
 }
@@ -195,6 +220,11 @@ void loop() {
   if ((int32_t)(now - nextSampleUs) > 100000) nextSampleUs = now;
   uint8_t rssi = 0;
   HAL_SUBGHZ_ExecGetCmd(&hsubghz, RADIO_GET_RSSIINST, &rssi, 1);
+  if (cfoOn && nSamples % CFO_EVERY == 0) {
+    uint8_t r[2];
+    HAL_SUBGHZ_ReadRegisters(&hsubghz, REG_GCFORH, r, 2);
+    cfo[nSamples / CFO_EVERY] = ((r[0] & 0x0F) << 8) | r[1];
+  }
   samples[nSamples++] = rssi;
   if (nSamples == LINE_SAMPLES) flushLine();
 }
