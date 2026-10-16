@@ -1,5 +1,6 @@
 import { appliesTo, runCallback } from './callbacks'
 import type { Auth, CallbackLog, Device, Message, Radio, Store } from './db'
+import { renderDownlink } from './downlink'
 import { decodeFrame, encodeFrame, fromHex, toHex, TYPE_DOWNLINK, TYPE_UPLINK, verifyMac, type Frame } from './frame'
 import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
 import type { RadioMessage, RadioStatus, SigfoxRadio } from './gateway/sigfox'
@@ -201,7 +202,7 @@ export class Engine {
     }
 
     let data: string | null = null
-    if (device.downlinkMode === 'static' && device.downlinkData) data = device.downlinkData
+    if (device.downlinkMode === 'static' && device.downlinkData) data = renderDownlink(device.downlinkData, f)
     if (device.downlinkMode === 'callback') data = results.find((r) => r.downlink)?.downlink ?? null
     if (!data || !device.key || f.auth !== 'ok') {
       if (data && !device.key) this.console(`downlink for ${f.deviceId} skipped: device key not registered`)

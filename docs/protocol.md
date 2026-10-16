@@ -114,7 +114,19 @@ Space-separated `name:offset:type:args` fields. Leaving `offset` empty (`name::t
 
 ### Downlinks
 
-Each device selects `none` / `static` (fixed 8 bytes) / `callback`. With `callback`, the 8 bytes are
+Each device selects `none` / `static` (fixed 8 bytes) / `callback`.
+
+The `static` data may embed these variables between hex bytes (Sigfox-style emulator compatible). Hex is
+case-insensitive and must be written in whole bytes; variable names are lower-case. The template must
+render to exactly 8 bytes, which is checked when the device is saved (e.g. `{time}0102{rssi}`).
+
+| Variable | Bytes | Contents |
+|---|---|---|
+| `{time}` | 4 | UNIX time of the uplink in seconds, big-endian |
+| `{tapid}` | 4 | `{station}` parsed as hex and left-padded to 8 hex digits (`0000` for real Sigfox → `00000000`); `00000000` if it is not hex |
+| `{rssi}` | 2 | best RSSI of the uplink (dBm) as int16 two's complement, big-endian (`-100` → `ff9c`) |
+
+With `callback`, the 8 bytes are
 taken from the response of a callback marked for downlinks, in either of these formats:
 
 ```json
