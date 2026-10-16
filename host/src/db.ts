@@ -51,7 +51,7 @@ export type Settings = z.infer<typeof Settings>
 
 export type DownlinkStatus = 'none' | 'pending' | 'sent' | 'failed' | 'nodata' | 'unsupported'
 export type Radio = 'espnow' | 'sigfox'
-export type Auth = 'ok' | 'bad' | 'unknown'
+export type Auth = 'ok' | 'bad' | 'unknown' | 'unverified' // unverified: 本物の Sigfox で鍵が分からない
 
 export type Message = {
   id: number

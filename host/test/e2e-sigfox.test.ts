@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
 import { constants, createReadStream, existsSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,6 +6,7 @@ import { Store } from '../src/db'
 import { Engine, type EngineEvent } from '../src/engine'
 import { SimGateway } from '../src/gateway/sim'
 import { SigfoxRadio } from '../src/gateway/sigfox'
+import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'
 
 // Real RC3 uplinks from device 00763DA3 recorded with the LSM100A streamer (2 kHz, raw = -2 * dBm)
 const live = readFileSync(join(import.meta.dir, 'fixtures/rc3-00763DA3-live.rssi'))
@@ -48,9 +49,10 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
 
   const messages = store.listMessages().reverse()
   expect(messages.map((m) => [m.seq, m.data, m.ack, m.radio, m.auth])).toEqual([
-    [1982, '1234567890', false, 'sigfox', 'unknown'],
-    [1983, '11', false, 'sigfox', 'unknown'],
-    [1984, '11', true, 'sigfox', 'unknown'],
+    // the device uses its private key, which the host does not know
+    [1982, '1234567890', false, 'sigfox', 'unverified'],
+    [1983, '11', false, 'sigfox', 'unverified'],
+    [1984, '11', true, 'sigfox', 'unverified'],
   ])
   for (const m of messages) {
     expect(m.deviceId).toBe('00763DA3')
@@ -86,6 +88,41 @@ test('a late repetition does not create a second message', () => {
   engine.handleSigfox({ ...m, ranks: [2] })
   expect(store.listMessages()).toHaveLength(1)
   expect(store.listMessages()[0]).toMatchObject({ seq: 7, rssi: -80, nbFrames: 2, radio: 'sigfox' })
+})
+
+describe('authentication of real Sigfox uplinks', () => {
+  const uplink = (key: Uint8Array, counter: number) => {
+    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: false }
+    return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0, receivedAt: Date.now() }
+  }
+  const privateKey = Uint8Array.from(Buffer.from('3f2a10990102030405060708090a0b0c', 'hex'))
+  const setup = (key: string, acceptUnknownDevices: boolean) => {
+    const store = new Store(':memory:')
+    store.saveSettings({ ...store.getSettings(), acceptUnknownDevices })
+    if (key) store.upsertDevice({ id: '0A1B2C3D', name: '', key, downlinkMode: 'none', downlinkData: '', payloadConfig: '' })
+    return { store, engine: new Engine(store, new SimGateway()) }
+  }
+  const lastAuth = (store: Store) => store.listMessages()[0]!.auth
+
+  test('a device in public key mode is verified without registering a key', () => {
+    const { store, engine } = setup('', false)
+    engine.handleSigfox(uplink(PUBLIC_KEY, 1))
+    expect(lastAuth(store)).toBe('ok')
+  })
+
+  test('a registered device key is checked', () => {
+    const { store, engine } = setup(Buffer.from(privateKey).toString('hex'), false)
+    engine.handleSigfox(uplink(privateKey, 1))
+    expect(lastAuth(store)).toBe('ok')
+    engine.handleSigfox({ ...uplink(privateKey, 2), auth: Uint8Array.of(0, 0, 0, 0) })
+    expect(lastAuth(store)).toBe('bad')
+  })
+
+  test('without a matching key the uplink is unverified', () => {
+    const { store, engine } = setup('', true)
+    engine.handleSigfox(uplink(privateKey, 1))
+    expect(lastAuth(store)).toBe('unverified')
+  })
 })
 
 test('an existing database gains the radio column', () => {

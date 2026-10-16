@@ -74,6 +74,21 @@ function sizes(cls: number, li: number) {
   return { payload: 4 * (cls - 1) - li, auth: li + 2 }
 }
 
+// LI/BF/REP/MC, EP ID (LSB first) and payload: the part of an uplink covered by the authentication field
+export function uplinkHeader(opts: { deviceId: string; counter: number; payload: Uint8Array; downlink?: boolean; bit?: 0 | 1 | null }) {
+  const n = opts.payload.length
+  const bit = opts.bit ?? undefined
+  const cls = bit !== undefined || n === 0 ? 0 : n === 1 ? 1 : Math.floor((n - 1) / 4) + 2
+  const li = bit !== undefined ? 2 + bit : cls >= 2 ? 3 - ((n - 1) % 4) : 0
+  const id = Number.parseInt(opts.deviceId, 16)
+  const out = new Uint8Array(2 + 4 + n)
+  out[0] = (li << 6) | ((opts.downlink ? 1 : 0) << 5) | ((opts.counter >> 8) & 0x0f)
+  out[1] = opts.counter & 0xff
+  for (let i = 0; i < 4; i++) out[2 + i] = (id >>> (8 * i)) & 0xff
+  out.set(opts.payload, 6)
+  return { bytes: out, cls, authSize: cls >= 2 ? li + 2 : 2 }
+}
+
 // Builds the data bits of an uplink frame (used by tests and the simulator)
 export function encodeUplink(opts: {
   rank: number
@@ -84,20 +99,14 @@ export function encodeUplink(opts: {
   downlink?: boolean
   bit?: 0 | 1
 }) {
-  const n = opts.payload.length
-  const cls = opts.bit !== undefined || n === 0 ? 0 : n === 1 ? 1 : Math.floor((n - 1) / 4) + 2
-  const li = opts.bit !== undefined ? 2 + opts.bit : cls >= 2 ? 3 - ((n - 1) % 4) : 0
-  const id = Number.parseInt(opts.deviceId, 16)
-  const body = new Uint8Array(2 + 4 + n + opts.auth.length)
-  body[0] = (li << 6) | ((opts.downlink ? 1 : 0) << 5) | ((opts.counter >> 8) & 0x0f)
-  body[1] = opts.counter & 0xff
-  for (let i = 0; i < 4; i++) body[2 + i] = (id >>> (8 * i)) & 0xff
-  body.set(opts.payload, 6)
-  body.set(opts.auth, 6 + n)
+  const header = uplinkHeader(opts)
+  const body = new Uint8Array(header.bytes.length + opts.auth.length)
+  body.set(header.bytes)
+  body.set(opts.auth, header.bytes.length)
   const crc = crc16(body)
   let bits = [...body].map((b) => bitsOf(b, 8)).join('') + bitsOf(crc, 16)
   if (opts.rank > 0) bits = convolve(bits, opts.rank)
-  return bitsOf(PREAMBLE, 16) + bitsOf(FRAME_TYPES[opts.rank]![cls]!, 16) + bits
+  return bitsOf(PREAMBLE, 16) + bitsOf(FRAME_TYPES[opts.rank]![header.cls]!, 16) + bits
 }
 
 function parseBody(bodyBits: string, rank: number, cls: number, repaired: string | null): UplinkFrame | null {
