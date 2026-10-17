@@ -96,6 +96,7 @@ const DL_BADGE = {
   none: '',
   pending: '<span class="badge warn">待機中</span>',
   sent: '<span class="badge ok">送信済</span>',
+  acked: '<span class="badge ok">受信確認</span>',
   failed: '<span class="badge bad">失敗</span>',
   nodata: '<span class="badge muted">データなし</span>',
   unsupported: '<span class="badge muted">送信なし</span>',

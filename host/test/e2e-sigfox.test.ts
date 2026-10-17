@@ -89,7 +89,7 @@ test('a late repetition does not create a second message', () => {
   const store = new Store(':memory:')
   const engine = new Engine(store, new SimGateway())
   const m = {
-    deviceId: '00763DA3', counter: 7, payload: new Uint8Array([0x11]), bit: null, downlink: false, auth: new Uint8Array(2),
+    deviceId: '00763DA3', counter: 7, payload: new Uint8Array([0x11]), bit: null, downlink: false, control: false, auth: new Uint8Array(2),
     time: 0, rssi: -80.5, ranks: [0, 1], frames: [], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null,
   }
   engine.handleSigfox(m)
@@ -100,7 +100,7 @@ test('a late repetition does not create a second message', () => {
 
 describe('authentication of real Sigfox uplinks', () => {
   const uplink = (key: Uint8Array, counter: number) => {
-    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: false }
+    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: false, control: false }
     return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], frames: [], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null }
   }
   const privateKey = Uint8Array.from(Buffer.from('3f2a10990102030405060708090a0b0c', 'hex'))
@@ -158,7 +158,7 @@ describe('authentication of real Sigfox uplinks', () => {
 describe('downlinks to real Sigfox devices', () => {
   const ULF = 923_183_000 // frame 1 somewhere in the macro channel
   const uplink = (key: Uint8Array, counter: number, extra: object = {}) => {
-    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: true }
+    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: true, control: false }
     // the device's receive window opens 100 ms after the start of the transmission
     const firstFrameEndAt = Date.now() - RC3_DL_T_W_MS - 2000 + 100
     return {
