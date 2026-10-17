@@ -122,7 +122,8 @@ export function burstBits(seg: Float32Array, rate: number): Bits | null {
   return { bits, periodSamples: period, clockErrorPpm: Math.round((period / nominal - 1) * 1e6), levelDbm: level, dips: points.length }
 }
 
-export type DecodedFrame = UplinkFrame & { time: number; rssi: number; clockErrorPpm: number }
+// time / end: start and end of the burst in seconds
+export type DecodedFrame = UplinkFrame & { time: number; end: number; rssi: number; clockErrorPpm: number }
 
 export function decodeBurst(dbm: Float32Array, rate: number, b: Burst, t0 = 0): DecodedFrame | null {
   const pad = Math.round(rate * 0.02)
@@ -131,7 +132,7 @@ export function decodeBurst(dbm: Float32Array, rate: number, b: Burst, t0 = 0): 
   if (!bits) return null
   const frame = decodeUplinkBits(bits.bits)
   if (!frame) return null
-  return { ...frame, time: t0 + b.start / rate, rssi: b.peakDbm, clockErrorPpm: bits.clockErrorPpm }
+  return { ...frame, time: t0 + b.start / rate, end: t0 + b.end / rate, rssi: b.peakDbm, clockErrorPpm: bits.clockErrorPpm }
 }
 
 // Decodes every frame found in a block of RSSI samples (dBm). `t0` is the time of the first sample in seconds.

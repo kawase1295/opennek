@@ -16,7 +16,20 @@ export type RadioStatus = {
   lostLines: number
 }
 
-export type RadioMessage = SigfoxMessage & { receivedAt: number } // wall-clock ms of the first frame
+export type RadioMessage = SigfoxMessage & {
+  receivedAt: number // wall-clock ms of the first frame
+  firstFrameEndAt: number | null // wall-clock ms of the end of frame 1
+  // Carrier frequency of frame 1, which the downlink frequency is derived from. The LSM100A streamer cannot
+  // measure it (one wide filter), so it is null until a receiver that can is connected
+  uplinkFreqHz: number | null
+}
+
+// Sends Sigfox downlinks (an SX1262 radio, #6). The transmitter owns the regulatory side (power cap, carrier
+// sense, transmit-time limits) and resolves false when it did not transmit, e.g. after the deadline.
+export type SigfoxDownlinkTx = { deviceId: string; counter: number; freqHz: number; frame: Uint8Array; deadline: number }
+export interface SigfoxTransmitter {
+  transmit(tx: SigfoxDownlinkTx): Promise<boolean>
+}
 
 const RETRY_MS = 2000
 const STATUS_TIMEOUT_MS = 3000
@@ -108,9 +121,11 @@ export class SigfoxRadio {
     const rx = new SigfoxReceiver(
       rate,
       (m) => {
-        // stream time -> wall clock: the stream is (rx.time - m.time) seconds ahead of the first frame
-        const receivedAt = Date.now() - Math.round((rx.time - m.time) * 1000)
-        for (const l of this.messageListeners) l({ ...m, receivedAt })
+        // stream time -> wall clock: the stream is (rx.time - t) seconds ahead of t
+        const now = Date.now()
+        const wall = (t: number) => now - Math.round((rx.time - t) * 1000)
+        const firstFrameEndAt = m.firstFrameEnd === null ? null : wall(m.firstFrameEnd)
+        for (const l of this.messageListeners) l({ ...m, receivedAt: wall(m.time), firstFrameEndAt, uplinkFreqHz: null })
       },
       (f) => {
         if (f.crcOk) this.setStatus({ frames: this.st.frames + 1, lastFrameAt: Date.now() })
