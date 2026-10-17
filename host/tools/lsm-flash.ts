@@ -95,11 +95,33 @@ export async function ymodemSend(
   if (await waitFor(port, CRC_REQ, 3000)) await sendBlock(port, ymodemBlock(0, new Uint8Array(), 128, 0), 'end block')
 }
 
+const PROMPT = 'Waiting for the file to be sent'
+// The streamer's hex sample lines ("R0123:CCC...") can contain "CCC" too: drop them, and the tail of a line
+// that was already being received, before looking for the bootloader
+export function bootloaderOutput(seen: string) {
+  return seen.replace(/^[R0-9A-F:]*\n/, '').replace(/R[0-9A-F]{4}:[0-9A-F]*\n?/g, '')
+}
+
 // Resolves once the bootloader prints its prompt; it is then waiting for the Ymodem header
 async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
   if (bridge) {
-    // The OpenNEK bridge resets the module and catches the 0.5 s bootloader window itself
+    // OpenNEK streamer: reset it with "X" and knock from here. The bridge's IAP command is too late for it:
+    // it spends ~130 ms at 9600 bps for the AT firmware before knocking, and a KNOCK command needs 150 ms of
+    // silence first
     await Bun.sleep(200)
+    port.drain()
+    port.write('\nX\n')
+    let seen = ''
+    for (const start = Date.now(); Date.now() - start < 1500; ) {
+      port.write('1')
+      await Bun.sleep(10)
+      seen += new TextDecoder('latin1').decode(port.drain())
+      // Stop at the prompt: further bytes would land in the Ymodem receiver
+      if (bootloaderOutput(seen).includes(PROMPT)) return
+    }
+    // Stock AT firmware: the bridge resets the module and catches the 0.5 s bootloader window itself
+    await Bun.sleep(200)
+    port.drain()
     port.write('~~~OPENNEK:IAP\n')
   } else {
     // Stock AT firmware: soft reset at 9600; OpenNEK streamer: "X" at 115200
@@ -107,10 +129,9 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
     port.write('ATZ\r') // the AT firmware expects CR only
     await Bun.sleep(30)
     await port.setBaud(115200)
-    port.write('X\n')
+    port.write('\nX\n') // the newline ends any partial command, which would swallow the X
   }
   console.log('Waiting for the bootloader (reset the LSM100A now if nothing happens)...')
-  const prompt = 'Waiting for the file to be sent'
   // The prompt can arrive split across several polls, so keep everything seen so far
   let seen = ''
   const polls = Number(process.env.BOOT_WAIT_S ?? 30) * 20
@@ -123,15 +144,21 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
     if (got && process.env.YMODEM_DEBUG) console.error(`rx ${JSON.stringify(got)}`)
     seen += got
     // The prompt, or repeated CRC requests when it is already waiting from an earlier attempt
-    if (seen.includes(prompt) || seen.includes('CCC')) {
+    const out = bootloaderOutput(seen)
+    if (out.includes(PROMPT) || out.includes('CCC')) {
       // Through the bridge, wait for its "~~~OK" line: until then it may still be knocking
-      for (let k = 0; bridge && k < 200 && !/~~~OK (knock|iap)=/.test(seen.slice(seen.search(/Waiting|CCC/))); k++) {
+      for (let k = 0, o = out; bridge && k < 200 && !/~~~OK (knock|iap)=/.test(o.slice(o.search(/Waiting|CCC/))); k++) {
         await Bun.sleep(50)
         seen += new TextDecoder('latin1').decode(port.drain())
+        o = bootloaderOutput(seen)
       }
       // Let the bootloader settle, then drop the backlog of CRC requests
       await Bun.sleep(300)
-      port.drain()
+      // Sample lines still arriving mean the streamer is running: it was not the bootloader
+      if (/R[0-9A-F]{4}:/.test(new TextDecoder('latin1').decode(port.drain()))) {
+        seen = ''
+        continue
+      }
       return
     }
     if (seen.length > 4096) seen = seen.slice(-256)
