@@ -8,27 +8,13 @@
 import { writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { findBursts } from '../src/sigfox/demod'
+import { CFO_EVERY, cfoSigned, cfoStepHz, RC3_DELTA_F_MF_HZ } from '../src/sigfox/frequency'
 import { openPort } from './serial'
 
-const XTAL_HZ = 32_000_000
-const STREAMER_BIT_RATE = 50_000 // the streamer's GFSK setting (firmware-lsm100a configureRx)
-const CFO_EVERY = 8
 const DEFAULT_FREQ = 923_200_000
-const RC3_DELTA_F_MF_HZ = 6000 // frames 2 and 3 of a bidirectional message: frame 1 +/- this (sigfox-ep-lib)
 const ABOVE_DB = 15 // a sample this far above the noise floor counts as signal
 const SETTLE_MS = 300 // wait this long into a frame before trusting the CFO
 const QUIET_MS = 10_000 // a gap this long ends a message
-
-// Hz per CFO LSB, as in SUBGRF_GetCFO (STM32CubeWL): the RX_BW code has the BWSELR layout
-export function cfoStepHz(bwCode: number, bitRate = STREAMER_BIT_RATE) {
-  const mant = [4, 8, 10, 12][(bwCode >> 3) & 3]!
-  const cfFs = XTAL_HZ / (mant * (1 << ((bwCode & 7) + 1)))
-  const osr = Math.floor(cfFs / bitRate)
-  const interp = osr < 4 ? 4 : osr < 8 ? 2 : 1
-  return (cfFs * interp) / 4096
-}
-
-export const cfoSigned = (v: number) => (v & 0x800 ? v - 0x1000 : v)
 
 const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b)

@@ -1,6 +1,7 @@
 // Streaming Sigfox receiver: takes RSSI samples as they arrive, decodes complete frames and merges the up
 // to three repetitions of a message into one.
 import { type DecodedFrame, decodeBurst, findBursts, noiseFloor } from './demod'
+import type { FrameSpan } from './frequency'
 
 export type SigfoxMessage = {
   deviceId: string
@@ -13,6 +14,7 @@ export type SigfoxMessage = {
   firstFrameEnd: number | null // stream time of the end of frame 1 (rank 0), which starts the device's downlink timer
   rssi: number // best RSSI of the received frames (dBm)
   ranks: number[] // which repetitions (0..2) were received with a valid CRC
+  frames: FrameSpan[] // when each of them was on air
   clockErrorPpm: number
 }
 
@@ -100,7 +102,10 @@ export class SigfoxReceiver {
     const key = `${f.deviceId}:${f.counter}`
     const m = this.pending.get(key)
     if (m) {
-      if (!m.ranks.includes(f.rank)) m.ranks.push(f.rank)
+      if (!m.ranks.includes(f.rank)) {
+        m.ranks.push(f.rank)
+        m.frames.push({ rank: f.rank, time: f.time, end: f.end })
+      }
       m.rssi = Math.max(m.rssi, f.rssi)
       m.last = f.time
       if (f.rank === 0) m.firstFrameEnd = f.end
@@ -117,6 +122,7 @@ export class SigfoxReceiver {
       firstFrameEnd: f.rank === 0 ? f.end : null,
       rssi: f.rssi,
       ranks: [f.rank],
+      frames: [{ rank: f.rank, time: f.time, end: f.end }],
       clockErrorPpm: f.clockErrorPpm,
       last: f.time,
     })
