@@ -5,8 +5,9 @@ import { join } from 'node:path'
 import { Store } from '../src/db'
 import { Engine, type EngineEvent } from '../src/engine'
 import { SimGateway } from '../src/gateway/sim'
-import { SigfoxRadio } from '../src/gateway/sigfox'
+import { type SigfoxDownlinkTx, SigfoxRadio } from '../src/gateway/sigfox'
 import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'
+import { encodeDownlink, RC3_DL_T_RX_MS, RC3_DL_T_W_MS } from '../src/sigfox/downlink'
 
 // Real RC3 uplinks from device 00763DA3 recorded with the LSM100A streamer (2 kHz, raw = -2 * dBm)
 const live = readFileSync(join(import.meta.dir, 'fixtures/rc3-00763DA3-live.rssi'))
@@ -41,6 +42,8 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
   const engine = new Engine(store, new SimGateway(), radio)
   const events: EngineEvent[] = []
   engine.on((e) => events.push(e))
+  const radioMessages: { receivedAt: number; firstFrameEndAt: number | null; ranks: number[] }[] = []
+  radio.onMessage((m) => radioMessages.push(m))
 
   for (const line of streamerLines(live)) radio.handleLine(line)
   radio.flush()
@@ -62,6 +65,11 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
   // Receive only: a requested downlink is marked as unsupported instead of waiting for data
   expect(messages[2]!.downlinkStatus).toBe('unsupported')
   expect(store.getDevice('00763DA3')).toMatchObject({ lastSeq: 1984 })
+  // Frame 1 starts the device's downlink timer; it lasts 0.5-2 s depending on the payload
+  for (const m of radioMessages.filter((m) => m.ranks.includes(0))) {
+    expect(m.firstFrameEndAt! - m.receivedAt).toBeGreaterThan(500)
+    expect(m.firstFrameEndAt! - m.receivedAt).toBeLessThan(2500)
+  }
 
   hits.sort((a, b) => a.body.seq - b.body.seq)
   expect(hits.map((h) => h.body)).toMatchObject([
@@ -82,7 +90,7 @@ test('a late repetition does not create a second message', () => {
   const engine = new Engine(store, new SimGateway())
   const m = {
     deviceId: '00763DA3', counter: 7, payload: new Uint8Array([0x11]), bit: null, downlink: false, auth: new Uint8Array(2),
-    time: 0, rssi: -80.5, ranks: [0, 1], clockErrorPpm: 0, receivedAt: Date.now(),
+    time: 0, rssi: -80.5, ranks: [0, 1], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null,
   }
   engine.handleSigfox(m)
   engine.handleSigfox({ ...m, ranks: [2] })
@@ -93,7 +101,7 @@ test('a late repetition does not create a second message', () => {
 describe('authentication of real Sigfox uplinks', () => {
   const uplink = (key: Uint8Array, counter: number) => {
     const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: false }
-    return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0, receivedAt: Date.now() }
+    return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null }
   }
   const privateKey = Uint8Array.from(Buffer.from('3f2a10990102030405060708090a0b0c', 'hex'))
   const setup = (key: string, acceptUnknownDevices: boolean) => {
@@ -144,6 +152,97 @@ describe('authentication of real Sigfox uplinks', () => {
     const { store, engine } = setup('', true)
     engine.handleSigfox(uplink(privateKey, 1))
     expect(lastAuth(store)).toBe('unverified')
+  })
+})
+
+describe('downlinks to real Sigfox devices', () => {
+  const ULF = 923_183_000 // frame 1 somewhere in the macro channel
+  const uplink = (key: Uint8Array, counter: number, extra: object = {}) => {
+    const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: true }
+    // the device's receive window opens 100 ms after the start of the transmission
+    const firstFrameEndAt = Date.now() - RC3_DL_T_W_MS - 2000 + 100
+    return {
+      ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0,
+      receivedAt: firstFrameEndAt - 1500, firstFrameEnd: 0, firstFrameEndAt, uplinkFreqHz: ULF, ...extra,
+    }
+  }
+  const setup = (opts: { sigfoxDownlink?: boolean; acceptUnknownDevices?: boolean; key?: string; result?: boolean } = {}) => {
+    const store = new Store(':memory:')
+    store.saveSettings({ ...store.getSettings(), sigfoxDownlink: opts.sigfoxDownlink ?? true, acceptUnknownDevices: opts.acceptUnknownDevices ?? true })
+    store.upsertDevice({ id: '0A1B2C3D', name: '', key: opts.key ?? '', downlinkMode: 'static', downlinkData: '0102030405060708', payloadConfig: '' })
+    const sent: SigfoxDownlinkTx[] = []
+    const tx = { transmit: async (t: SigfoxDownlinkTx) => (sent.push(t), opts.result ?? true) }
+    const engine = new Engine(store, new SimGateway(), null, tx)
+    const lines: string[] = []
+    engine.on((e) => e.type === 'console' && lines.push(e.line))
+    return { store, engine, sent, lines }
+  }
+  const settled = async (store: Store) => {
+    for (let i = 0; i < 100 && store.listMessages()[0]?.downlinkStatus === 'pending'; i++) await settle(10)
+    return store.listMessages()[0]!
+  }
+
+  test('a public key device gets its static data in its receive window', async () => {
+    const { store, engine, sent, lines } = setup()
+    const up = uplink(PUBLIC_KEY, 42)
+    engine.handleSigfox(up)
+    expect(store.listMessages()[0]!.downlinkStatus).toBe('pending')
+    expect(sent).toHaveLength(0)
+    const m = await settled(store)
+    expect(m).toMatchObject({ downlinkStatus: 'sent', downlink: '0102030405060708' })
+    expect(sent).toHaveLength(1)
+    const t = sent[0]!
+    expect(t.freqHz).toBe(ULF - 1_000_000)
+    expect(t.frame).toEqual(encodeDownlink({ deviceId: '0A1B2C3D', counter: 42, key: PUBLIC_KEY, payload: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8) }))
+    expect(t.deadline).toBe(up.firstFrameEndAt + RC3_DL_T_W_MS + RC3_DL_T_RX_MS - 1000)
+    // every transmission is logged
+    expect(lines.some((l) => l.includes('TX 922.183000 MHz'))).toBe(true)
+  })
+
+  test('a registered private key is used for a verified device', async () => {
+    const key = '3f2a10990102030405060708090a0b0c'
+    const { store, engine, sent } = setup({ key, acceptUnknownDevices: false })
+    engine.handleSigfox(uplink(Uint8Array.from(Buffer.from(key, 'hex')), 7))
+    expect((await settled(store)).downlinkStatus).toBe('sent')
+    expect(sent[0]!.frame).toEqual(encodeDownlink({ deviceId: '0A1B2C3D', counter: 7, key: Uint8Array.from(Buffer.from(key, 'hex')), payload: Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8) }))
+  })
+
+  test('nothing is sent unless transmitting is enabled', async () => {
+    const { store, engine, sent } = setup({ sigfoxDownlink: false })
+    engine.handleSigfox(uplink(PUBLIC_KEY, 1))
+    expect((await settled(store)).downlinkStatus).toBe('unsupported')
+    expect(sent).toHaveLength(0)
+  })
+
+  test('an unauthenticated uplink gets no downlink', async () => {
+    const privateKey = Uint8Array.from(Buffer.from('3f2a10990102030405060708090a0b0c', 'hex'))
+    for (const [opts, key] of [[{}, privateKey], [{ acceptUnknownDevices: false }, PUBLIC_KEY]] as const) {
+      const { store, engine, sent } = setup(opts)
+      engine.handleSigfox(uplink(key, 1))
+      expect((await settled(store)).downlinkStatus).toBe('nodata')
+      expect(sent).toHaveLength(0)
+    }
+  })
+
+  test('without the frequency or the end of frame 1 there is nothing to aim at', async () => {
+    for (const extra of [{ uplinkFreqHz: null }, { firstFrameEndAt: null, firstFrameEnd: null, ranks: [1, 2] }]) {
+      const { store, engine, sent } = setup()
+      engine.handleSigfox(uplink(PUBLIC_KEY, 1, extra))
+      expect((await settled(store)).downlinkStatus).toBe('unsupported')
+      expect(sent).toHaveLength(0)
+    }
+  })
+
+  test('a closed receive window or a refused transmission fails the downlink', async () => {
+    const late = setup()
+    late.engine.handleSigfox(uplink(PUBLIC_KEY, 1, { firstFrameEndAt: Date.now() - RC3_DL_T_W_MS - RC3_DL_T_RX_MS }))
+    expect((await settled(late.store)).downlinkStatus).toBe('failed')
+    expect(late.sent).toHaveLength(0)
+
+    const refused = setup({ result: false })
+    refused.engine.handleSigfox(uplink(PUBLIC_KEY, 1))
+    expect((await settled(refused.store)).downlinkStatus).toBe('failed')
+    expect(refused.sent).toHaveLength(1)
   })
 })
 

@@ -2,9 +2,10 @@ import { appliesTo, runCallback } from './callbacks'
 import type { Auth, CallbackLog, Device, Message, Radio, Store } from './db'
 import { decodeFrame, encodeFrame, fromHex, toHex, TYPE_DOWNLINK, TYPE_UPLINK, verifyMac, type Frame } from './frame'
 import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
-import type { RadioMessage, RadioStatus, SigfoxRadio } from './gateway/sigfox'
+import type { RadioMessage, RadioStatus, SigfoxRadio, SigfoxTransmitter } from './gateway/sigfox'
 import { decodePayload } from './payload'
 import { PUBLIC_KEY, verifyUplink } from './sigfox/auth'
+import { downlinkFrequency, downlinkWindow, encodeDownlink } from './sigfox/downlink'
 
 export type EngineEvent =
   | { type: 'message'; message: Message }
@@ -29,6 +30,9 @@ type Incoming = {
   src: string
   station: string
   time: number
+  // 本物の Sigfox のダウンリンクに必要な、フレーム 1 の終了時刻と周波数
+  firstFrameEndAt: number | null
+  uplinkFreqHz: number | null
 }
 
 // 同じ (デバイス, seq) の遅れて届いた repeat を無視する期間
@@ -47,6 +51,7 @@ export class Engine {
     readonly store: Store,
     readonly gateway: Gateway,
     readonly sigfox: SigfoxRadio | null = null,
+    readonly sigfoxTx: SigfoxTransmitter | null = null,
   ) {
     gateway.onUplink((u) => this.handleUplink(u))
     gateway.onStatus((status) => this.emit({ type: 'gateway', status }))
@@ -101,6 +106,7 @@ export class Engine {
       const incoming: Incoming = {
         radio: 'espnow', deviceId: f.deviceId, seq: f.seq, payload: f.payload, ack: f.ack, oob: f.oob,
         rssi: p.rssi, nbFrames: p.nbFrames, auth: p.auth, src: p.src, station: p.station, time: p.time,
+        firstFrameEndAt: null, uplinkFreqHz: null,
       }
       void this.finalize(incoming).catch((e) => this.console(`error: ${(e as Error).stack ?? e}`))
     }, this.store.getSettings().dedupWindowMs)
@@ -127,6 +133,8 @@ export class Engine {
       src: 'sigfox',
       station: SIGFOX_STATION,
       time: m.receivedAt,
+      firstFrameEndAt: m.firstFrameEndAt,
+      uplinkFreqHz: m.uplinkFreqHz,
     }
     void this.finalize(incoming).catch((e) => this.console(`error: ${(e as Error).stack ?? e}`))
   }
@@ -194,15 +202,15 @@ export class Engine {
       }),
     )
     if (!f.ack) return
-    if (f.radio === 'sigfox') {
-      // 受信専用: Sigfox のダウンリンクは送れない (コールバックには ack=true のまま渡している)
-      message = this.store.updateMessage(message.id, { downlinkStatus: 'unsupported' })!
-      return this.emit({ type: 'message', message })
-    }
 
     let data: string | null = null
     if (device.downlinkMode === 'static' && device.downlinkData) data = device.downlinkData
     if (device.downlinkMode === 'callback') data = results.find((r) => r.downlink)?.downlink ?? null
+    if (f.radio === 'sigfox') {
+      // 公開鍵モードのデバイスには公開鍵で認証値を付ける。未登録デバイスを受け付けない設定ならコールバックと同じく送らない
+      const key = f.auth === 'ok' ? fromHex(device.key) : f.auth === 'public' && trusted ? PUBLIC_KEY : null
+      return this.sigfoxDownlink(f, message, data, key)
+    }
     if (!data || !device.key || f.auth !== 'ok') {
       if (data && !device.key) this.console(`downlink for ${f.deviceId} skipped: device key not registered`)
       message = this.store.updateMessage(message.id, { downlinkStatus: 'nodata' })!
@@ -212,5 +220,40 @@ export class Engine {
     const ok = await this.gateway.sendDownlink(f.src, frame)
     message = this.store.updateMessage(message.id, { downlink: data, downlinkStatus: ok ? 'sent' : 'failed' })!
     this.emit({ type: 'message', message })
+  }
+
+  // デバイスの受信ウィンドウ (フレーム 1 の終了から T_W 後) まで待って送信機に渡す
+  private async sigfoxDownlink(f: Incoming, message: Message, data: string | null, key: Uint8Array | null) {
+    const update = (patch: Parameters<Store['updateMessage']>[1]) => {
+      message = this.store.updateMessage(message.id, patch)!
+      this.emit({ type: 'message', message })
+    }
+    const name = `sigfox downlink for ${f.deviceId} seq=${f.seq}`
+    // 送信機が無い・送信が有効でないときは受信専用 (コールバックには ack=true のまま渡している)
+    if (!this.sigfoxTx || !this.store.getSettings().sigfoxDownlink) return update({ downlinkStatus: 'unsupported' })
+    if (!data || !key) {
+      if (data) this.console(`${name} skipped: uplink not authenticated (auth=${f.auth})`)
+      return update({ downlinkStatus: 'nodata' })
+    }
+    if (f.firstFrameEndAt === null || f.uplinkFreqHz === null) {
+      this.console(`${name} skipped: ${f.firstFrameEndAt === null ? 'frame 1 not received' : 'frequency of frame 1 unknown'}`)
+      return update({ downlinkStatus: 'unsupported' })
+    }
+    const { at, deadline } = downlinkWindow(f.firstFrameEndAt)
+    if (Date.now() > deadline) {
+      this.console(`${name} skipped: the device's receive window has closed`)
+      return update({ downlink: data, downlinkStatus: 'failed' })
+    }
+    const freqHz = downlinkFrequency(f.uplinkFreqHz)
+    const frame = encodeDownlink({ deviceId: f.deviceId, counter: f.seq, payload: fromHex(data), key })
+    await Bun.sleep(Math.max(0, at - Date.now()))
+    // 電波を出すので送信はすべて記録する
+    this.console(`${name}: TX ${(freqHz / 1e6).toFixed(6)} MHz data=${data} frame=${toHex(frame)}`)
+    const ok = await this.sigfoxTx.transmit({ deviceId: f.deviceId, counter: f.seq, freqHz, frame, deadline }).catch((e) => {
+      this.console(`${name}: ${(e as Error).message}`)
+      return false
+    })
+    this.console(`${name}: ${ok ? 'sent' : 'not sent'}`)
+    update({ downlink: data, downlinkStatus: ok ? 'sent' : 'failed' })
   }
 }

@@ -10,9 +10,24 @@ export const DL_DEVIATION_HZ = 800
 // RC3: the downlink is sent on the frequency of the uplink's first frame + (f_dl - f_ul)
 export const RC3_UL_HZ = 923_200_000
 export const RC3_DL_HZ = 922_200_000
-// RC3: the device listens from T_W after the uplink for T_RX
+// RC3: the device listens from T_W after the end of uplink frame 1 for T_RX (sigfox_ep_api.c starts the T_W
+// timer when frame rank 1 has been sent)
 export const RC3_DL_T_W_MS = 20_000
 export const RC3_DL_T_RX_MS = 25_000
+// Where to transmit inside that window: late enough for the error of the device's timer and of our estimate of
+// the end of frame 1, and early enough that carrier sense can postpone the transmission
+const TX_DELAY_MS = 2000
+const TX_END_MARGIN_MS = 1000
+
+export function downlinkFrequency(uplinkFreqHz: number) {
+  return uplinkFreqHz + RC3_DL_HZ - RC3_UL_HZ
+}
+
+// at: when to transmit; deadline: the latest start that still ends inside the device's window (wall-clock ms)
+export function downlinkWindow(firstFrameEndAt: number) {
+  const opens = firstFrameEndAt + RC3_DL_T_W_MS
+  return { at: opens + TX_DELAY_MS, deadline: opens + RC3_DL_T_RX_MS - TX_END_MARGIN_MS }
+}
 
 const POW_ALPHA = [1, 2, 4, 8, 3, 6, 12, 11, 5, 10, 7, 14, 15, 13, 9]
 const PAYLOAD = 4

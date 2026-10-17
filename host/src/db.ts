@@ -46,6 +46,7 @@ export const Settings = z.object({
   acceptUnknownDevices: z.boolean().default(true), // 未登録デバイスのメッセージも表示・コールバックする
   sigfoxPort: z.string().default(''), // 本物の Sigfox を受ける RSSI ストリーマのポート。空なら使わない
   sigfoxFreq: z.number().int().min(862_000_000).max(928_000_000).default(923_200_000), // RC3 のアップリンク中心周波数
+  sigfoxDownlink: z.boolean().default(false), // 本物の Sigfox デバイスへダウンリンクを送信する。電波を出すので明示的に有効にする
 })
 export type Settings = z.infer<typeof Settings>
 

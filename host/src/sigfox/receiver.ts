@@ -10,6 +10,7 @@ export type SigfoxMessage = {
   downlink: boolean
   auth: Uint8Array
   time: number // stream time of the first frame received, in seconds
+  firstFrameEnd: number | null // stream time of the end of frame 1 (rank 0), which starts the device's downlink timer
   rssi: number // best RSSI of the received frames (dBm)
   ranks: number[] // which repetitions (0..2) were received with a valid CRC
   clockErrorPpm: number
@@ -102,6 +103,7 @@ export class SigfoxReceiver {
       if (!m.ranks.includes(f.rank)) m.ranks.push(f.rank)
       m.rssi = Math.max(m.rssi, f.rssi)
       m.last = f.time
+      if (f.rank === 0) m.firstFrameEnd = f.end
       return
     }
     this.pending.set(key, {
@@ -112,6 +114,7 @@ export class SigfoxReceiver {
       downlink: f.downlink,
       auth: f.auth,
       time: f.time,
+      firstFrameEnd: f.rank === 0 ? f.end : null,
       rssi: f.rssi,
       ranks: [f.rank],
       clockErrorPpm: f.clockErrorPpm,
