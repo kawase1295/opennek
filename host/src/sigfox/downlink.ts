@@ -11,9 +11,9 @@ export const DL_DEVIATION_HZ = 800
 export const RC3_UL_HZ = 923_200_000
 export const RC3_DL_HZ = 922_200_000
 // RC3: the device listens from T_W after the end of uplink frame 1 for T_RX (sigfox_ep_api.c starts the T_W
-// timer when frame rank 1 has been sent)
-export const RC3_DL_T_W_MS = 20_000
-export const RC3_DL_T_RX_MS = 25_000
+// timer when frame rank 1 has been sent; RC3 uses SIGFOX_SPECTRUM_ACCESS_LBT_M80 in sigfox_rc.c)
+export const RC3_DL_T_W_MS = 19_000
+export const RC3_DL_T_RX_MS = 33_500
 // Where to transmit inside that window: late enough for the error of the device's timer and of our estimate of
 // the end of frame 1, and early enough that carrier sense can postpone the transmission
 const TX_DELAY_MS = 2000

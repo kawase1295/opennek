@@ -98,7 +98,7 @@ const DL_BADGE = {
   sent: '<span class="badge ok">送信済</span>',
   failed: '<span class="badge bad">失敗</span>',
   nodata: '<span class="badge muted">データなし</span>',
-  unsupported: '<span class="badge muted">受信専用</span>',
+  unsupported: '<span class="badge muted">送信なし</span>',
 }
 const RADIO_BADGE = {
   espnow: '<span class="badge muted">ESP-NOW</span>',
@@ -431,6 +431,7 @@ async function loadSettings() {
   f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.sigfoxPort.value = s.sigfoxPort
   f.sigfoxFreq.value = s.sigfoxFreq
+  f.sigfoxDownlink.checked = s.sigfoxDownlink
   f.channel.value = s.channel
   f.dedupWindowMs.value = s.dedupWindowMs
   f.downlinkTimeoutMs.value = s.downlinkTimeoutMs
@@ -450,6 +451,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
         acceptUnknownDevices: f.acceptUnknownDevices.checked,
         sigfoxPort: f.sigfoxPort.value,
         sigfoxFreq: Number(f.sigfoxFreq.value),
+        sigfoxDownlink: f.sigfoxDownlink.checked,
       },
     })
     toast('保存しました')

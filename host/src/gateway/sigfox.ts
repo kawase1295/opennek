@@ -1,3 +1,4 @@
+import { toHex } from '../frame'
 import { FrequencyTracker } from '../sigfox/frequency'
 import { type SigfoxMessage, SigfoxReceiver } from '../sigfox/receiver'
 import { type LinePort, openLinePort } from './serial'
@@ -33,6 +34,14 @@ export interface SigfoxTransmitter {
   transmit(tx: SigfoxDownlinkTx): Promise<boolean>
 }
 
+// Downlinks from the streamer itself (firmware-lsm100a 0.3.0): "T<hz>,<dBm>,<hex>" answered by "D <result>". The
+// firmware enforces the channel, the power cap, carrier sense and the transmit-time limits; TX is allowed with "E1"
+// only around each transmission.
+const TX_FW = [0, 3, 0]
+const TX_DBM = 10 // the firmware's maximum
+const TX_REPLY_MS = 2000 // carrier sense and 280 ms on air
+const TX_RETRY_MS = 200 // after "busy": the channel was in use
+
 const RETRY_MS = 2000
 const STATUS_TIMEOUT_MS = 3000
 const STALL_MS = 3000 // no samples for this long means the streamer is gone
@@ -40,7 +49,13 @@ const DEFAULT_RATE = 2000
 
 type Listener<T> = (v: T) => void
 
-export class SigfoxRadio {
+const atLeast = (fw: string | undefined, min: number[]) => {
+  const v = (fw ?? '').split('.').map(Number)
+  for (const [i, m] of min.entries()) if ((v[i] ?? 0) !== m) return (v[i] ?? 0) > m
+  return true
+}
+
+export class SigfoxRadio implements SigfoxTransmitter {
   private st: RadioStatus = { state: 'off', port: null, frames: 0, badFrames: 0, lostLines: 0 }
   private port: LinePort | null = null
   private closing: Promise<void> = Promise.resolve()
@@ -49,6 +64,8 @@ export class SigfoxRadio {
   private watchdog: Timer | null = null
   private rx: SigfoxReceiver | null = null
   private tracker: FrequencyTracker | null = null
+  private txReply: ((result: string) => void) | null = null
+  private txBusy = false
   private lastSeq = -1
   private lastSample = 0
   private statusListeners: Listener<RadioStatus>[] = []
@@ -89,9 +106,63 @@ export class SigfoxRadio {
     if (!this.stopped) void this.connect()
   }
 
+  // One downlink frame, retried while the channel is busy until the deadline (wall-clock ms)
+  async transmit(tx: SigfoxDownlinkTx): Promise<boolean> {
+    if (!this.port || this.st.state !== 'connected') return this.txFailed('receiver not connected')
+    if (!atLeast(this.st.fw, TX_FW)) return this.txFailed(`firmware-lsm100a ${TX_FW.join('.')} or later needed (fw=${this.st.fw ?? '?'})`)
+    if (this.txBusy) return this.txFailed('another downlink is being sent')
+    this.txBusy = true
+    try {
+      this.write('E1')
+      for (;;) {
+        if (Date.now() > tx.deadline) return this.txFailed("the device's receive window has closed")
+        const result = await this.command(`T${tx.freqHz},${TX_DBM},${toHex(tx.frame).toUpperCase()}`)
+        this.log(`sigfox: TX ${(tx.freqHz / 1e6).toFixed(6)} MHz ${TX_DBM} dBm: ${result ?? 'no reply'}`)
+        if (result?.startsWith('ok')) return true
+        if (!result?.startsWith('busy')) return false
+        await Bun.sleep(TX_RETRY_MS)
+      }
+    } finally {
+      this.write('E0')
+      this.txBusy = false
+    }
+  }
+
+  private txFailed(why: string) {
+    this.log(`sigfox: TX not sent: ${why}`)
+    return false
+  }
+
+  private command(line: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.txReply = null
+        resolve(null)
+      }, TX_REPLY_MS)
+      this.txReply = (result) => {
+        clearTimeout(timer)
+        this.txReply = null
+        resolve(result)
+      }
+      this.write(line)
+    })
+  }
+
+  private write(line: string) {
+    try {
+      this.port?.write(line)
+    } catch (e) {
+      this.fail(e)
+    }
+  }
+
   // Feeds one streamer line; public so recordings can be replayed without a port
   handleLine(raw: string) {
     const line = raw.replace(/\r$/, '')
+    if (line.startsWith('D ')) {
+      this.txReply?.(line.slice(2).trim())
+      return
+    }
     if (line.startsWith('I ')) {
       const field = (k: string) => new RegExp(`\\b${k}=(\\S+)`).exec(line)?.[1]
       const rate = Number(field('sr') ?? DEFAULT_RATE)
@@ -138,11 +209,7 @@ export class SigfoxRadio {
 
   private tune(freq: number) {
     this.log(`sigfox: tuning to ${(freq / 1e6).toFixed(6)} MHz`)
-    try {
-      this.port?.write(`F${freq}`)
-    } catch (e) {
-      this.fail(e)
-    }
+    this.write(`F${freq}`)
   }
 
   private startReceiver(rate: number) {

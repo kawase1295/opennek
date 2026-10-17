@@ -111,8 +111,10 @@
           <label class="check"><input type="checkbox" name="acceptUnknownDevices" />鍵が未登録のデバイスもコールバックを実行する</label>
           <h3>Sigfox 受信機 (RC3)</h3>
           <label>受信機のポート<select name="sigfoxPort"></select>
-            <small>RSSI ストリーマ (firmware-lsm100a) を書き込んだ受信機。本物の Sigfox デバイスのアップリンクを受信します (受信のみ)。</small></label>
+            <small>RSSI ストリーマ (firmware-lsm100a) を書き込んだ受信機。本物の Sigfox デバイスのアップリンクを受信します。</small></label>
           <label>受信周波数 (Hz)<input name="sigfoxFreq" type="number" min="862000000" max="928000000" step="100" required /></label>
+          <label class="check"><input type="checkbox" name="sigfoxDownlink" />受信機からダウンリンクを送信する (電波を出します)
+            <small>firmware-lsm100a 0.3.0 以降。922.2 MHz 帯・10 mW・キャリアセンス付きで、デバイスの受信ウィンドウに 1 回だけ送信します。送信する機器が技適 (または無線局免許) の条件を満たしているときだけ有効にしてください。</small></label>
           <div class="actions"><button class="primary">保存</button><span id="settings-saved" class="muted"></span></div>
         </form>
       </section>
