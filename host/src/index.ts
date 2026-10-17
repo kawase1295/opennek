@@ -66,7 +66,8 @@ const sigfoxSettings = () => {
 }
 const gateway: Gateway = args.sim ? new SimGateway() : new SerialGateway(() => store.getSettings().serialPort, () => [store.getSettings().sigfoxPort])
 const sigfox = new SigfoxRadio(sigfoxSettings)
-const engine = new Engine(store, gateway, sigfox)
+// The receiver also transmits the downlinks (firmware-lsm100a 0.3.0), while the sigfoxDownlink setting is on
+const engine = new Engine(store, gateway, sigfox, sigfox)
 const ts = () => new Date().toLocaleTimeString()
 let lastRadioLine = ''
 engine.on((e) => {

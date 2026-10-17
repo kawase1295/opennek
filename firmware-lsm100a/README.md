@@ -74,8 +74,34 @@ cd host && bun src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 ```
 
 The port is remembered; pick it (or "使わない" to turn the receiver off) under Settings → Sigfox 受信機.
-An auto-detected ESP-NOW gateway never takes the receiver's port. Limits for now: the receiver only
-listens, so a requested downlink is shown as "受信専用" (receive only).
+An auto-detected ESP-NOW gateway never takes the receiver's port.
+
+### Downlinks (firmware 0.3.0, transmits)
+
+With "受信機からダウンリンクを送信する" (Settings → Sigfox 受信機) turned on, the receiver answers uplinks
+that request a downlink. The request must be authenticated: registered key, or public key mode (below). The
+payload is the device's static data or the callback's `downlinkData`.
+
+1. While the setting is on, the receiver tunes to frame 1 of each message once its frequency offset (CFO)
+   has settled. Frame 1 is then the midpoint of frames 2 and 3 (frame 1 ± 6 kHz), measured to ~100 Hz.
+2. The downlink frequency is frame 1 − 1 MHz. Measuring and transmitting use the same oscillator, so no
+   calibration is needed.
+3. The downlink is sent 21 s after the end of frame 1, inside the device's RC3 window (19 s after frame 1
+   for 33.5 s). The frame is GFSK 600 bps, 800 Hz deviation, preamble `AAAA`, sync word `B227`, as SJI's
+   `RF_Tx_Local_loop`.
+
+The firmware refuses anything outside these limits, whatever the host asks:
+
+| Limit | Value |
+|---|---|
+| Transmitting | only between `E1` and `E0` (the host sends them around each frame); off after every reset |
+| Frequency | 922.1–922.3 MHz (the 922.2 MHz unit channel) |
+| Power | 10 dBm (10 mW), low-power PA |
+| Carrier sense | −80 dBm for 5 ms in ~200 kHz (sigfox-ep-lib RC3 LBT); if busy, the host retries every 200 ms until the window closes |
+| Pause / hourly budget | 100 ms between transmissions, 360 s on air per hour |
+
+Turn it on only when the transmitting equipment meets its radio certification (技適) or licence. Check
+these values against your certification conditions.
 
 ### Uplink authentication
 
@@ -132,7 +158,11 @@ checks that it gives the same results on the recorded captures.
 
 | Direction | Line | Meaning |
 |---|---|---|
-| out | `I fw=0.1.0 f=923200000 bw=10 sr=2000 boost=1` | status |
+| out | `I fw=0.3.0 f=923200000 bw=10 sr=2000 boost=1 cfo=1 pd=4 tx=0` | status |
 | out | `R<seq>:<64 x 2 hex>` | 64 RSSI samples, dBm = -value / 2 |
+| out | `C<seq>:<8 x 3 hex>` | CFO register (12-bit signed), one per 8 samples of the R line with the same seq (0.2.0, with `C1`) |
+| out | `D ok ms=<n>` / `D busy rssi=<dBm>` / `D off` / `D range` / `D limit` / `D err` | result of `T` (0.3.0) |
 | in | `F<hz>` `W<code>` `S<hz>` `B<0\|1>` | frequency, bandwidth, sample rate, LNA boost |
+| in | `C<0\|1>` `P<code>` | CFO lines, preamble detector (0.2.0) |
+| in | `E<0\|1>` `T<hz>,<dBm>,<30 hex>` | allow transmitting, send one downlink frame (0.3.0) |
 | in | `?` / `X` | status / reset (into the IAP bootloader) |
