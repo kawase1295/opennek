@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type RadioMessage, SigfoxRadio } from '../src/gateway/sigfox'
 import { CFO_SCALE, cfoSigned, cfoStepHz, FrequencyTracker } from '../src/sigfox/frequency'
+import { SigfoxReceiver } from '../src/sigfox/receiver'
 
 test('CFO step follows SUBGRF_GetCFO for the streamer bandwidths', () => {
   // 234.3 kHz: demod sampling 500 kHz
@@ -89,6 +90,26 @@ test('following the signal tunes to frame 1 while it is still on air', () => {
   expect(tune).toHaveLength(1)
   // the coarse frame 1 reading of that recording: 923.2 MHz - 43 823 Hz / CFO_SCALE
   expect(tune[0]).toBe('sigfox: tuning to 923.152878 MHz')
+})
+
+test('without frame 1, its end is estimated from frames 2 and 3', () => {
+  const d = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures', 'cfo-rc3-00763DA3-dl.json'), 'utf8'))
+  const raw = Buffer.from(d.raw, 'base64')
+  const run = (data: Uint8Array) => {
+    const out: { ranks: number[]; firstFrameEnd: number | null }[] = []
+    const rx = new SigfoxReceiver(d.rate, (m) => out.push(m))
+    rx.pushRaw(data)
+    rx.flush()
+    return out
+  }
+  const [whole] = run(raw)
+  expect(whole!.ranks).toEqual([0, 1, 2])
+  // frame 1 (2.89-4.16 s into the recording) replaced by noise
+  const lost = Uint8Array.from(raw)
+  lost.fill(218, 2.7 * d.rate, 4.4 * d.rate)
+  const [m] = run(lost)
+  expect(m!.ranks).toEqual([1, 2])
+  expect(Math.abs(m!.firstFrameEnd! - whole!.firstFrameEnd!)).toBeLessThan(0.02)
 })
 
 describe('FrequencyTracker', () => {

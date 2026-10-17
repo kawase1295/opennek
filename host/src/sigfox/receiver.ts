@@ -24,6 +24,8 @@ const TAIL_S = 0.3 // a burst counts as finished once it ended this long before 
 // Repetitions start ~3.7-4 s apart and a frame is only decoded ~2 s after it starts, so wait this long
 // after the latest repetition before calling a message complete
 const QUIET_S = 10
+// From the end of one repetition to the start of the next; the same for 1- and 5-byte payloads (AX-SFJK, RC3)
+export const FRAME_GAP_S = 2.43
 const SAME_BURST_S = 0.3 // the detected start of a burst moves a little between scans
 
 export class SigfoxReceiver {
@@ -134,8 +136,16 @@ export class SigfoxReceiver {
         this.pending.delete(key)
         const { last: _, ...message } = m
         message.ranks.sort()
+        message.firstFrameEnd ??= estimateFirstFrameEnd(message.frames)
         this.onMessage(message)
       }
     }
   }
+}
+
+// When frame 1 was lost (often when the receiver retuned during it), its end from a later repetition: all three
+// last as long and are FRAME_GAP_S apart. The device starts its downlink timer there.
+export function estimateFirstFrameEnd(frames: FrameSpan[]): number | null {
+  const f = frames.filter((x) => x.rank > 0).sort((a, b) => a.rank - b.rank)[0]
+  return f ? f.end - f.rank * (f.end - f.time + FRAME_GAP_S) : null
 }
