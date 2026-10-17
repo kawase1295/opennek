@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type RadioMessage, SigfoxRadio } from '../src/gateway/sigfox'
-import { cfoSigned, cfoStepHz, FrequencyTracker } from '../src/sigfox/frequency'
+import { CFO_SCALE, cfoSigned, cfoStepHz, FrequencyTracker } from '../src/sigfox/frequency'
 
 test('CFO step follows SUBGRF_GetCFO for the streamer bandwidths', () => {
   // 234.3 kHz: demod sampling 500 kHz
@@ -70,11 +70,11 @@ test('frame 1 itself is read against the frequency it was retuned to', () => {
     }
   }
   const frame1 = messages[0]!.frames.find((f) => f.rank === 0)!
-  // cfo-capture --retune: 923.200488 MHz + CFO -122 Hz
+  // cfo-capture --retune: 923.200488 MHz + CFO -122 Hz / CFO_SCALE
   const f = t.frameFrequency(frame1)!
-  expect([f.lo, Math.round(f.hz)]).toEqual([923_200_488, 923_200_366])
+  expect([f.lo, Math.round(f.hz)]).toEqual([923_200_488, 923_200_357])
   // without frames 2 and 3, frame 1 itself is used
-  expect(t.frame1([frame1], true)).toBe(923_200_366)
+  expect(t.frame1([frame1], true)).toBe(923_200_357)
 })
 
 test('without retuning, frame 1 is too far from the receiver frequency to be trusted', () => {
@@ -87,8 +87,8 @@ test('following the signal tunes to frame 1 while it is still on air', () => {
   const { logs } = replay('cfo-rc3-00763DA3-dl.json', true)
   const tune = logs.filter((l) => l.includes('tuning to'))
   expect(tune).toHaveLength(1)
-  // the coarse frame 1 reading of that recording: 923.2 MHz - 43 823 Hz
-  expect(tune[0]).toBe('sigfox: tuning to 923.156177 MHz')
+  // the coarse frame 1 reading of that recording: 923.2 MHz - 43 823 Hz / CFO_SCALE
+  expect(tune[0]).toBe('sigfox: tuning to 923.152878 MHz')
 })
 
 describe('FrequencyTracker', () => {
@@ -114,7 +114,7 @@ describe('FrequencyTracker', () => {
     expect(feed(t, 2, -110, 0)).toEqual([])
     // a frame 100 LSB (12.2 kHz) above the receiver frequency
     const step = cfoStepHz(0x0a)
-    expect(feed(t, 1.3, -80, 100)).toEqual([923_200_000 + Math.round(100 * step)])
+    expect(feed(t, 1.3, -80, 100)).toEqual([923_200_000 + Math.round((100 * step) / CFO_SCALE)])
     // frames 2 and 3 do not move it again
     expect(feed(t, 2.4, -110, 0)).toEqual([])
     expect(feed(t, 1.3, -80, 50)).toEqual([])

@@ -157,7 +157,16 @@ export class SigfoxRadio {
         const wall = (t: number) => now - Math.round((rx.time - t) * 1000)
         const firstFrameEndAt = m.firstFrameEnd === null ? null : wall(m.firstFrameEnd)
         const uplinkFreqHz = tracker.frame1(m.frames, m.downlink)
-        if (m.downlink) this.log(`sigfox: frame 1 of ${m.deviceId} seq=${m.counter} ${uplinkFreqHz === null ? 'not measured' : `at ${(uplinkFreqHz / 1e6).toFixed(6)} MHz`}`)
+        if (m.downlink) {
+          // receiver frequency + CFO of each frame, to check the measurement
+          const readings = m.frames.map((f) => {
+            const r = tracker.frameFrequency(f)
+            const cfo = r ? Math.round(r.hz - r.lo) : 0
+            return r ? `${f.rank + 1}: ${(r.lo / 1e6).toFixed(6)} ${cfo >= 0 ? '+' : ''}${cfo} Hz` : `${f.rank + 1}: -`
+          })
+          const at = uplinkFreqHz === null ? 'not measured' : `at ${(uplinkFreqHz / 1e6).toFixed(6)} MHz`
+          this.log(`sigfox: frame 1 of ${m.deviceId} seq=${m.counter} ${at} (${readings.join(', ')})`)
+        }
         for (const l of this.messageListeners) l({ ...m, receivedAt: wall(m.time), firstFrameEndAt, uplinkFreqHz })
       },
       (f) => {

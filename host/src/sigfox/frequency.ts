@@ -1,24 +1,28 @@
 // Frequency of uplink frame 1, which the downlink frequency is derived from (#6), measured with the GFSK carrier
 // frequency offset (CFO) register that the LSM100A streamer reports from fw 0.2.0 on.
 //
-// The CFO reads about 7 % low (frames 2/3 of a bidirectional message come out 11.1-11.2 kHz apart instead of
-// 12 kHz), so a reading far from the receiver frequency is only good to a few kHz. To get within the device's
-// 4.8 kHz receive bandwidth, the receiver is tuned to the coarse frame 1 reading before frame 2 starts. Frames 2
-// and 3 (frame 1 +/- 6 kHz, sigfox-ep-lib SIGFOX_EP_FREQUENCY_compute_uplink) then land close to the receiver
-// frequency, and frame 1 is their midpoint; on hardware this agreed with the direct reading within 122 Hz.
+// The register reads about 7 % low (CFO_SCALE), so a reading far from the receiver frequency is only good to a
+// few hundred Hz even after correcting for that. To get well within the device's 4.8 kHz receive bandwidth, the
+// receiver is tuned to the coarse frame 1 reading before frame 2 starts. Frames 2 and 3 (frame 1 +/- 6 kHz,
+// sigfox-ep-lib SIGFOX_EP_FREQUENCY_compute_uplink) then land close to the receiver frequency, and frame 1 is
+// their midpoint; on hardware this agreed with the direct reading within 122 Hz.
 
 const XTAL_HZ = 32_000_000
 const STREAMER_BIT_RATE = 50_000 // the streamer's GFSK setting (firmware-lsm100a configureRx)
 export const CFO_EVERY = 8 // one CFO value per 8 RSSI samples
 export const RC3_DELTA_F_MF_HZ = 6000
+// Measured on hardware (LSM100A, RX_BW 234 kHz): one frame read 50 171 Hz from one receiver frequency and 3 784 Hz
+// from another 50 171 Hz higher, so the register gives 0.925 of the offset; frames 2/3 came out 11.1-11.4 kHz
+// apart instead of 12 kHz (0.926-0.946)
+export const CFO_SCALE = 0.93
 
 const ABOVE_DB = 15 // a sample this far above the noise floor counts as signal
 const SETTLE_S = 0.3 // CFO readings are trusted this long into a frame and after a retune
 const GAP_S = 0.1 // a longer gap ends a frame (the DBPSK dips are shorter)
 const QUIET_S = 10 // a longer gap ends a message: back to the base frequency
 const KEEP_S = 60
-// Readings further than this from the receiver frequency are off by more than 7 % of it: too far for the device's
-// receive window (+/- 1 kHz is the aim), so such a message gets no frequency
+// The scale is known to about 1 %, and only from readings up to 50 kHz: a message read further than this from the
+// receiver frequency gets no frequency rather than one that may miss the device's window (+/- 1 kHz is the aim)
 const MAX_OFFSET_HZ = 10_000
 
 // Hz per CFO LSB, as in SUBGRF_GetCFO (STM32CubeWL): the RX_BW code has the BWSELR layout
@@ -93,7 +97,7 @@ export class FrequencyTracker {
     for (const [k, v] of raw.entries()) {
       const at = this.lineStart + k * CFO_EVERY
       if (at < tunedAt + settle && this.tuning.length > 1) continue // the register is still catching up
-      this.readings.push({ at, lo: this.freq, hz: this.freq + cfoSigned(v) * this.stepHz })
+      this.readings.push({ at, lo: this.freq, hz: this.freq + (cfoSigned(v) * this.stepHz) / CFO_SCALE })
     }
   }
 
@@ -133,7 +137,7 @@ export class FrequencyTracker {
     }
     const [f1, f2, f3] = [at(0), at(1), at(2)]
     if (downlink && f2 && f3 && f2.lo === f3.lo) {
-      // a plausible spacing (12 kHz, read about 7 % low) guards against a frame from another device
+      // a plausible spacing (12 kHz) guards against a frame from another device
       const spacing = f2.hz - f3.hz
       const mid = (f2.hz + f3.hz) / 2
       if (spacing > 1.5 * RC3_DELTA_F_MF_HZ && spacing < 2.5 * RC3_DELTA_F_MF_HZ && Math.abs(mid - f2.lo) <= MAX_OFFSET_HZ) {
