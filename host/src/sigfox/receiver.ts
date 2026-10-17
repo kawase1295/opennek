@@ -9,6 +9,7 @@ export type SigfoxMessage = {
   payload: Uint8Array
   bit: 0 | 1 | null
   downlink: boolean
+  control: boolean // keep-alive or downlink confirmation
   auth: Uint8Array
   time: number // stream time of the first frame received, in seconds
   firstFrameEnd: number | null // stream time of the end of frame 1 (rank 0), which starts the device's downlink timer
@@ -119,6 +120,7 @@ export class SigfoxReceiver {
       payload: f.payload,
       bit: f.bit,
       downlink: f.downlink,
+      control: f.control,
       auth: f.auth,
       time: f.time,
       firstFrameEnd: f.rank === 0 ? f.end : null,

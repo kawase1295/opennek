@@ -63,7 +63,8 @@ export const Settings = z.object({
 })
 export type Settings = z.infer<typeof Settings>
 
-export type DownlinkStatus = 'none' | 'pending' | 'sent' | 'failed' | 'nodata' | 'unsupported'
+// acked: the device confirmed it with a control message (real Sigfox)
+export type DownlinkStatus = 'none' | 'pending' | 'sent' | 'acked' | 'failed' | 'nodata' | 'unsupported'
 export type Radio = 'espnow' | 'sigfox'
 // public: 公開鍵で検証できた本物の Sigfox。unverified: 本物の Sigfox で鍵が分からない
 export type Auth = 'ok' | 'bad' | 'unknown' | 'public' | 'unverified'

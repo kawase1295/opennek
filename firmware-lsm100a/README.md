@@ -90,6 +90,10 @@ payload is the device's static data or the callback's `downlinkData`.
    for 33.5 s). The frame is GFSK 600 bps, 800 Hz deviation, preamble `AAAA`, sync word `B227`, as SJI's
    `RF_Tx_Local_loop`.
 
+After `RX=`, the device sends a downlink confirmation: one control frame with the next sequence number. The
+host stores it as an OOB message with the device's voltages, temperature and the RSSI at which it received the
+downlink, and marks the downlink as "受信確認" (acked).
+
 The firmware refuses anything outside these limits, whatever the host asks:
 
 | Limit | Value |

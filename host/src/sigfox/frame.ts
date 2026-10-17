@@ -9,7 +9,9 @@ export const FRAME_TYPES = [
   [0xa6e0, 0xa0d2, 0xa598, 0xa6bf, 0xa971],
   [0xa034, 0xa302, 0xa5a3, 0xa72c, 0xa997],
 ] as const
+// Control frames (keep-alive, downlink confirmation): 7 or 8 bytes, laid out like payload class 3
 export const CONTROL_FRAME_TYPES = [0xaf67, 0xafc9, 0xb1be] as const
+const CONTROL_CLASS = 3
 const CONV_NEXT = [0, 0, 1, 1]
 const CONV_OUT = [
   [0, 0, 0, 0],
@@ -24,6 +26,7 @@ export type UplinkFrame = {
   payload: Uint8Array
   bit: 0 | 1 | null // single-bit messages (AT$SB)
   downlink: boolean // BF: the device waits for a downlink
+  control: boolean // a control frame (see decodeControl), not application data
   auth: Uint8Array
   crcOk: boolean
   repaired: string | null // description of the bit-slip correction that made the CRC pass, if any
@@ -98,6 +101,7 @@ export function encodeUplink(opts: {
   auth: Uint8Array
   downlink?: boolean
   bit?: 0 | 1
+  control?: boolean
 }) {
   const header = uplinkHeader(opts)
   const body = new Uint8Array(header.bytes.length + opts.auth.length)
@@ -106,10 +110,11 @@ export function encodeUplink(opts: {
   const crc = crc16(body)
   let bits = [...body].map((b) => bitsOf(b, 8)).join('') + bitsOf(crc, 16)
   if (opts.rank > 0) bits = convolve(bits, opts.rank)
-  return bitsOf(PREAMBLE, 16) + bitsOf(FRAME_TYPES[opts.rank]![header.cls]!, 16) + bits
+  const ft = opts.control ? CONTROL_FRAME_TYPES[opts.rank]! : FRAME_TYPES[opts.rank]![header.cls]!
+  return bitsOf(PREAMBLE, 16) + bitsOf(ft, 16) + bits
 }
 
-function parseBody(bodyBits: string, rank: number, cls: number, repaired: string | null): UplinkFrame | null {
+function parseBody(bodyBits: string, rank: number, cls: number, control: boolean, repaired: string | null): UplinkFrame | null {
   const plain = rank > 0 ? deconvolve(bodyBits, rank) : bodyBits
   if (plain.length < 16) return null
   const li = Number.parseInt(plain.slice(0, 2), 2)
@@ -129,6 +134,7 @@ function parseBody(bodyBits: string, rank: number, cls: number, repaired: string
     payload: body.slice(6, 6 + payload),
     bit: cls === 0 && li >= 2 ? ((li - 2) as 0 | 1) : null,
     downlink: (body[0]! & 0x20) !== 0,
+    control,
     auth: body.slice(6 + payload, 6 + payload + auth),
     crcOk,
     repaired,
@@ -142,10 +148,11 @@ export function decodeUplinkBits(bits: string): UplinkFrame | null {
   for (let start = 8; start <= 22 && start + 16 <= bits.length; start++) {
     const ft = Number.parseInt(bits.slice(start, start + 16), 2)
     for (let rank = 0; rank < 3; rank++) {
-      const cls = FRAME_TYPES[rank]!.indexOf(ft as never)
+      const control = ft === CONTROL_FRAME_TYPES[rank]
+      const cls = control ? CONTROL_CLASS : FRAME_TYPES[rank]!.indexOf(ft as never)
       if (cls < 0) continue
       const body = bits.slice(start + 16)
-      const frame = parseBody(body, rank, cls, null)
+      const frame = parseBody(body, rank, cls, control, null)
       if (frame?.crcOk) return frame
       // One bit lost or gained somewhere (clock slip), or one bit wrong
       for (let i = 0; i < body.length; i++) {
@@ -156,7 +163,7 @@ export function decodeUplinkBits(bits: string): UplinkFrame | null {
           [body.slice(0, i) + (body[i] === '1' ? '0' : '1') + body.slice(i + 1), `flipped bit ${i}`],
         ]
         for (const [candidate, how] of candidates) {
-          const fixed = parseBody(candidate, rank, cls, how)
+          const fixed = parseBody(candidate, rank, cls, control, how)
           if (fixed?.crcOk) return fixed
         }
       }
@@ -164,4 +171,28 @@ export function decodeUplinkBits(bits: string): UplinkFrame | null {
     }
   }
   return null
+}
+
+// Payload of a control frame (sigfox-ep-lib SIGFOX_EP_BITSTREAM_build_control_frame): a type byte, then little-endian
+// voltages and temperature; a downlink confirmation adds the RSSI at which the device received the downlink
+export type ControlMessage = {
+  type: 'keepAlive' | 'downlinkConfirmation'
+  voltageIdleMv: number
+  voltageTxMv: number
+  temperatureC: number
+  downlinkRssiDbm?: number
+}
+
+export function decodeControl(payload: Uint8Array): ControlMessage | null {
+  const type = payload[0] === 0x08 && payload.length === 7 ? 'keepAlive' : payload[0] === 0x09 && payload.length === 8 ? 'downlinkConfirmation' : null
+  if (!type) return null
+  const v = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+  const msg: ControlMessage = {
+    type,
+    voltageIdleMv: v.getUint16(1, true),
+    voltageTxMv: v.getUint16(3, true),
+    temperatureC: v.getInt16(5, true) / 10,
+  }
+  if (type === 'downlinkConfirmation') msg.downlinkRssiDbm = v.getInt8(7) - 100
+  return msg
 }

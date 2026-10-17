@@ -6,6 +6,7 @@ import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
 import type { RadioMessage, RadioStatus, SigfoxRadio, SigfoxTransmitter } from './gateway/sigfox'
 import { decodePayload } from './payload'
 import { PUBLIC_KEY, verifyUplink } from './sigfox/auth'
+import { decodeControl } from './sigfox/frame'
 import { downlinkFrequency, downlinkWindow, encodeDownlink } from './sigfox/downlink'
 
 export type EngineEvent =
@@ -127,7 +128,8 @@ export class Engine {
       // 1 ビットメッセージ (AT$SB) はデータ無し。値は Sigfox と同じく data に入れない
       payload: m.payload,
       ack: m.downlink,
-      oob: false,
+      // keep-alive and downlink confirmation, like the OOB frames of OpenNEK devices
+      oob: m.control,
       rssi: Math.round(m.rssi),
       nbFrames: m.ranks.length,
       auth: this.sigfoxAuth(m),
@@ -156,7 +158,10 @@ export class Engine {
     this.store.touchDevice(f.deviceId, f.seq, f.time)
 
     let decoded: Record<string, unknown> | null = null
-    if (device.payloadConfig && f.payload.length) {
+    const control = f.radio === 'sigfox' && f.oob ? decodeControl(f.payload) : null
+    if (control) {
+      decoded = control
+    } else if (device.payloadConfig && f.payload.length) {
       try {
         decoded = decodePayload(device.payloadConfig, f.payload)
       } catch (e) {
@@ -181,6 +186,7 @@ export class Engine {
       downlinkStatus: f.ack ? 'pending' : 'none',
     })
     this.emit({ type: 'message', message })
+    if (control?.type === 'downlinkConfirmation' && f.auth !== 'bad') this.confirmDownlink(f)
 
     // 鍵が合わないフレームはなりすましの可能性があるのでコールバックしない
     const trusted = f.auth === 'ok' || (f.auth !== 'bad' && settings.acceptUnknownDevices)
@@ -221,6 +227,16 @@ export class Engine {
     const ok = await this.gateway.sendDownlink(f.src, frame)
     message = this.store.updateMessage(message.id, { downlink: data, downlinkStatus: ok ? 'sent' : 'failed' })!
     this.emit({ type: 'message', message })
+  }
+
+  // 本物の Sigfox デバイスはダウンリンクを受け取ると、次のカウンタで確認の制御メッセージを送る
+  private confirmDownlink(f: Incoming) {
+    const seq = (f.seq + 0xfff) & 0xfff
+    const sent = this.store
+      .listMessages({ deviceId: f.deviceId, limit: 20 })
+      .find((m) => m.radio === 'sigfox' && m.seq === seq && m.downlinkStatus === 'sent')
+    if (!sent) return
+    this.emit({ type: 'message', message: this.store.updateMessage(sent.id, { downlinkStatus: 'acked' })! })
   }
 
   // デバイスの受信ウィンドウ (フレーム 1 の終了から T_W 後) まで待って送信機に渡す
