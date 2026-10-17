@@ -1,6 +1,8 @@
 // Reference vectors from sigfox-ep-lib. Usage:
 //   oracle ul <id8> <counter> <rank> <key:pub|priv> <bf> <payloadhex|bit0|bit1|empty>  -> bitstream hex
 //   oracle dl <id8> <counter> <key:pub|priv> <phy15hex>                               -> payload hex or INVALID
+// With the software AES build, sigfox-ep-lib checks the downlink with MCU_API_get_ep_key even in public key
+// mode, so "dl ... pub" makes the stub return the public key.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +10,8 @@
 #include "core/sigfox_ep_bitstream.h"
 #include "manuf/mcu_api.h"
 static const sfx_u8 PRIV[16] = {0x3f,0x2a,0x10,0x99,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c};
-MCU_API_status_t MCU_API_get_ep_key(sfx_u8 *k, sfx_u8 n) { memcpy(k, PRIV, n); return MCU_API_SUCCESS; }
+static const sfx_u8 *ep_key = PRIV;
+MCU_API_status_t MCU_API_get_ep_key(sfx_u8 *k, sfx_u8 n) { memcpy(k, ep_key, n); return MCU_API_SUCCESS; }
 static int hexb(const char *s, sfx_u8 *out) { int n = strlen(s) / 2; for (int i = 0; i < n; i++) { unsigned v; sscanf(s + 2*i, "%2x", &v); out[i] = v; } return n; }
 int main(int argc, char **argv) {
   sfx_u8 id[4]; hexb(argv[2], id); // MSB first, as AT$ID prints
@@ -34,6 +37,7 @@ int main(int argc, char **argv) {
     hexb(argv[5], phy);
     in.dl_phy_content = phy; in.ep_id = id; in.message_counter = atoi(argv[3]);
     in.ep_key_type = !strcmp(argv[4], "pub") ? SIGFOX_EP_KEY_PUBLIC : SIGFOX_EP_KEY_PRIVATE;
+    if (in.ep_key_type == SIGFOX_EP_KEY_PUBLIC) ep_key = SIGFOX_EP_PUBLIC_KEY;
     SIGFOX_EP_BITSTREAM_decode_downlink_frame(&in, &valid, out);
     if (!valid) { printf("INVALID\n"); return 0; }
     for (int i = 0; i < 8; i++) printf("%02x", out[i]); printf("\n");
