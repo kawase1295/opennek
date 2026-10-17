@@ -58,7 +58,12 @@ if (args.serial) store.saveSettings({ ...store.getSettings(), serialPort: args.s
 if (args.sigfox) store.saveSettings({ ...store.getSettings(), sigfoxPort: args.sigfox === 'off' ? '' : args.sigfox })
 if (args['sigfox-freq']) store.saveSettings(Settings.parse({ ...store.getSettings(), sigfoxFreq: Number(args['sigfox-freq']) }))
 
-const sigfoxSettings = () => ({ port: store.getSettings().sigfoxPort, freq: store.getSettings().sigfoxFreq })
+// Following frame 1 of each message (for its downlink frequency) costs reception of other devices' first frames,
+// so it is only on while Sigfox downlinks are enabled
+const sigfoxSettings = () => {
+  const s = store.getSettings()
+  return { port: s.sigfoxPort, freq: s.sigfoxFreq, follow: s.sigfoxDownlink }
+}
 const gateway: Gateway = args.sim ? new SimGateway() : new SerialGateway(() => store.getSettings().serialPort, () => [store.getSettings().sigfoxPort])
 const sigfox = new SigfoxRadio(sigfoxSettings)
 const engine = new Engine(store, gateway, sigfox)

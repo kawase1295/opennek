@@ -90,7 +90,7 @@ test('a late repetition does not create a second message', () => {
   const engine = new Engine(store, new SimGateway())
   const m = {
     deviceId: '00763DA3', counter: 7, payload: new Uint8Array([0x11]), bit: null, downlink: false, auth: new Uint8Array(2),
-    time: 0, rssi: -80.5, ranks: [0, 1], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null,
+    time: 0, rssi: -80.5, ranks: [0, 1], frames: [], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null,
   }
   engine.handleSigfox(m)
   engine.handleSigfox({ ...m, ranks: [2] })
@@ -101,7 +101,7 @@ test('a late repetition does not create a second message', () => {
 describe('authentication of real Sigfox uplinks', () => {
   const uplink = (key: Uint8Array, counter: number) => {
     const f = { deviceId: '0A1B2C3D', counter, payload: Uint8Array.of(1, 2, 3), bit: null, downlink: false }
-    return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null }
+    return { ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], frames: [], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null }
   }
   const privateKey = Uint8Array.from(Buffer.from('3f2a10990102030405060708090a0b0c', 'hex'))
   const setup = (key: string, acceptUnknownDevices: boolean) => {
@@ -162,7 +162,7 @@ describe('downlinks to real Sigfox devices', () => {
     // the device's receive window opens 100 ms after the start of the transmission
     const firstFrameEndAt = Date.now() - RC3_DL_T_W_MS - 2000 + 100
     return {
-      ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], clockErrorPpm: 0,
+      ...f, auth: uplinkAuth(key, f), time: 0, rssi: -90, ranks: [0, 1, 2], frames: [], clockErrorPpm: 0,
       receivedAt: firstFrameEndAt - 1500, firstFrameEnd: 0, firstFrameEndAt, uplinkFreqHz: ULF, ...extra,
     }
   }
@@ -290,9 +290,9 @@ test.skipIf(!hasSocat)('Sigfox receiver over a serial line', async () => {
   const radio = new SigfoxRadio(() => ({ port: hostPath, freq: 923_100_000 }))
   new Engine(store, new SimGateway(), radio)
   radio.start()
-  for (let i = 0; i < 100 && commands.length < 2; i++) await settle(20)
-  // The host tunes the streamer and asks for its status
-  expect(commands).toEqual(['F923100000', '?'])
+  for (let i = 0; i < 100 && commands.length < 3; i++) await settle(20)
+  // The host tunes the streamer, turns on the CFO lines and asks for its status
+  expect(commands).toEqual(['F923100000', 'C1', '?'])
 
   // Written by another process: a blocking write here would fill the pty while this process cannot read it
   const recording = join(dir, 'stream.txt')
