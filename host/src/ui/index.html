@@ -134,7 +134,9 @@
             <option value="static">固定データ</option>
             <option value="callback">コールバックのレスポンス</option>
           </select></label>
-        <label data-show="static">固定データ (8 バイト 16 進)<input name="downlinkData" maxlength="16" pattern="[0-9A-Fa-f]{16}" /></label>
+        <label data-show="static">固定データ (8 バイト 16 進)
+          <input name="downlinkData" maxlength="48" pattern="([0-9A-Fa-f]{2}|\{(time|tapid|rssi)\})+" placeholder="{time}0102{rssi}" />
+          <small>変数 <code>{time}</code> (UNIX 秒, 4 バイト) <code>{tapid}</code> (station, 4 バイト) <code>{rssi}</code> (符号付き, 2 バイト) を埋め込めます。合計 8 バイトにしてください。</small></label>
         <p class="error" id="dev-error"></p>
         <div class="actions">
           <button value="cancel" formnovalidate>キャンセル</button>

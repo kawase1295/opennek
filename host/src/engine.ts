@@ -1,5 +1,6 @@
 import { appliesTo, runCallback } from './callbacks'
 import type { Auth, CallbackLog, Device, Message, Radio, Store } from './db'
+import { renderDownlink } from './downlink'
 import { decodeFrame, encodeFrame, fromHex, toHex, TYPE_DOWNLINK, TYPE_UPLINK, verifyMac, type Frame } from './frame'
 import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
 import type { RadioMessage, RadioStatus, SigfoxRadio, SigfoxTransmitter } from './gateway/sigfox'
@@ -204,7 +205,7 @@ export class Engine {
     if (!f.ack) return
 
     let data: string | null = null
-    if (device.downlinkMode === 'static' && device.downlinkData) data = device.downlinkData
+    if (device.downlinkMode === 'static' && device.downlinkData) data = renderDownlink(device.downlinkData, f)
     if (device.downlinkMode === 'callback') data = results.find((r) => r.downlink)?.downlink ?? null
     if (f.radio === 'sigfox') {
       // 公開鍵モードのデバイスには公開鍵で認証値を付ける。未登録デバイスを受け付けない設定ならコールバックと同じく送らない
