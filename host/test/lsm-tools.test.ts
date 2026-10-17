@@ -2,7 +2,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { constants, createReadStream, existsSync, mkdtempSync, openSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { crc16, headerBlock, ymodemBlock } from '../tools/lsm-flash'
+import { bootloaderOutput, crc16, headerBlock, ymodemBlock } from '../tools/lsm-flash'
 import { findBursts, plotHtml } from '../tools/rssi-capture'
 
 test('crc16 matches the XMODEM check value', () => {
@@ -49,6 +49,13 @@ test('findBursts sees one burst per DBPSK frame despite the dips', () => {
   expect((bursts[0]!.end - bursts[0]!.start) / rate).toBeCloseTo(2.0, 1)
   expect(bursts[0]!.peakDbm).toBeGreaterThan(-42)
   expect(plotHtml(all, rate, bursts, {})).toContain('Burst 2')
+})
+
+test('streamer samples that contain CCC are not taken for the bootloader', () => {
+  const stream = 'DCCCE0\nR5622:CEC7DDCCCAD7\nR5623:C2D3\n~~~OK iap=seen\n'
+  expect(bootloaderOutput(stream)).not.toContain('CCC')
+  expect(bootloaderOutput(`${stream}R5624:D7\nCCCC`)).toContain('CCC')
+  expect(bootloaderOutput(`${stream}Waiting for the file to be sent ...`)).toContain('Waiting for the file')
 })
 
 // A fake SJI IAP bootloader on one side of a pty pair; lsm-flash.ts drives the other side
