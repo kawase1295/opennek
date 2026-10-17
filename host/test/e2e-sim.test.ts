@@ -87,6 +87,13 @@ test('static downlink and invalid input', async () => {
   const res = await (await call('/sim/uplink', { method: 'POST', body: { deviceId: '0A1B2C3D', ack: true } })).json()
   expect(res.downlink).toBe('0102030405060708')
 
+  // シミュレータの station は SIM_MAC の下位 4 バイト (00000001)
+  await call('/devices/0A1B2C3D', { method: 'PUT', body: { ...dev, downlinkMode: 'static', downlinkData: '{tapid}AABBCCDD' } })
+  const tpl = await (await call('/sim/uplink', { method: 'POST', body: { deviceId: '0A1B2C3D', ack: true } })).json()
+  expect(tpl.downlink).toBe('00000001aabbccdd')
+  const stored = (await (await call('/devices')).json()).find((d: any) => d.id === '0A1B2C3D')
+  expect(stored.downlinkData).toBe('{tapid}aabbccdd')
+
   const bad = await call('/devices/0A1B2C3D', { method: 'PUT', body: { ...dev, payloadConfig: 'x::wat:8' } })
   expect(bad.status).toBe(400)
   expect((await bad.json()).error).toContain('unknown type')

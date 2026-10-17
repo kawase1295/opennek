@@ -235,7 +235,7 @@ async function loadDevices() {
       (d) => `<tr data-id="${esc(d.id)}">
         <td><code>${esc(d.id)}</code></td><td>${esc(d.name) || '<span class="muted">—</span>'}</td>
         <td>${d.key ? '<span class="badge ok">登録済</span>' : '<span class="badge muted">未登録</span>'}</td>
-        <td>${DL[d.downlinkMode]}${d.downlinkMode === 'static' ? ` <code>${spaced(d.downlinkData)}</code>` : ''}</td>
+        <td>${DL[d.downlinkMode]}${d.downlinkMode === 'static' ? ` <code>${d.downlinkData.includes('{') ? d.downlinkData : spaced(d.downlinkData)}</code>` : ''}</td>
         <td>${fmtTime(d.lastSeen)}</td><td>${d.lastSeq ?? '—'}</td>
         <td><button class="small" data-act="edit">編集</button> <button class="small danger" data-act="del">削除</button></td></tr>`,
     )

@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { z } from 'zod/v4'
+import { parseDownlinkTemplate } from './downlink'
 import { parsePayloadConfig } from './payload'
 
 const hex = (bytes: number) => z.string().regex(new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`), `${bytes} バイトの 16 進`)
@@ -9,7 +10,19 @@ export const DeviceInput = z.object({
   name: z.string().max(64).default(''),
   key: z.union([hex(16), z.literal('')]).default('').transform((s) => s.toLowerCase()),
   downlinkMode: z.enum(['none', 'static', 'callback']).default('none'),
-  downlinkData: z.union([hex(8), z.literal('')]).default('').transform((s) => s.toLowerCase()),
+  downlinkData: z
+    .string()
+    .default('')
+    .check((ctx) => {
+      if (!ctx.value) return
+      try {
+        parseDownlinkTemplate(ctx.value)
+      } catch (e) {
+        ctx.issues.push({ code: 'custom', message: (e as Error).message, input: ctx.value })
+      }
+    })
+    // 変数名は小文字しか通らないので丸ごと小文字にしてよい
+    .transform((s) => s.toLowerCase()),
   payloadConfig: z
     .string()
     .default('')
