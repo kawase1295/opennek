@@ -10,6 +10,7 @@ import { listSerialPorts, SerialGateway } from './gateway/serial'
 import { SimGateway } from './gateway/sim'
 import { VERSION } from './version'
 import appJs from './ui/app.js' with { type: 'text' }
+import i18nJs from './ui/i18n.js' with { type: 'text' }
 import indexHtml from './ui/index.html' with { type: 'text' }
 import styleCss from './ui/style.css' with { type: 'text' }
 
@@ -21,7 +22,7 @@ const parse = <T>(schema: z.ZodType<T>, body: unknown) => {
 
 const SimUplink = z.object({
   deviceId: z.string().regex(/^[0-9a-fA-F]{8}$/).transform((s) => s.toUpperCase()).default('F0000001'),
-  data: z.string().regex(/^([0-9a-fA-F]{2}){0,12}$/, '0〜12 バイトの 16 進').default(''),
+  data: z.string().regex(/^([0-9a-fA-F]{2}){0,12}$/, '0-12 bytes of hex').default(''),
   ack: z.boolean().default(false),
   oob: z.boolean().default(false),
 })
@@ -40,6 +41,7 @@ export function createApp(engine: Engine) {
   // --- UI
   app.get('/', (c) => c.html(indexHtml as unknown as string)) // bun-types は .html を HTMLBundle と型付けするが type: 'text' なので文字列
   app.get('/app.js', (c) => c.body(appJs, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }))
+  app.get('/i18n.js', (c) => c.body(i18nJs, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }))
   app.get('/style.css', (c) => c.body(styleCss, 200, { 'Content-Type': 'text/css; charset=utf-8' }))
 
   const api = new Hono()

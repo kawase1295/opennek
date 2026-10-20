@@ -1,4 +1,6 @@
 // OpenNEK Web UI (ビルド不要の素の JS)
+import { LANGUAGES, lang, setLang, t, translatePage } from './i18n.js'
+
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
 const esc = (v) =>
@@ -44,17 +46,17 @@ function renderGateway(g) {
   state.gateway = g
   const pill = $('#gw')
   pill.className = `pill ${g.state}`
-  const label = { connected: '接続中', connecting: '接続待ち', disconnected: '未接続' }[g.state]
-  pill.textContent = g.kind === 'sim' ? `シミュレータ · ch ${g.channel ?? '-'}` : g.state === 'connected' ? `${label} · ch ${g.channel}` : label
+  const label = t(`gw.${g.state}`)
+  pill.textContent = g.kind === 'sim' ? `${t('gw.sim')} · ch ${g.channel ?? '-'}` : g.state === 'connected' ? `${label} · ch ${g.channel}` : label
   pill.title = g.error || g.port || ''
   $('#sim').classList.toggle('hidden', g.kind !== 'sim')
   $('#gw-detail').innerHTML = [
-    ['状態', `${label}${g.error ? ` — ${esc(g.error)}` : ''}`],
-    ['種類', g.kind === 'sim' ? 'シミュレータ' : 'USB シリアル'],
-    ['ポート', esc(g.port ?? '—')],
-    ['ファームウェア', esc(g.fw ?? '—')],
-    ['無線', esc(g.radio ?? '—')],
-    ['チャンネル', esc(g.channel ?? '—')],
+    [t('kv.state'), `${label}${g.error ? ` — ${esc(g.error)}` : ''}`],
+    [t('kv.kind'), g.kind === 'sim' ? t('gw.sim') : t('gw.serial')],
+    [t('kv.port'), esc(g.port ?? '—')],
+    [t('kv.firmware'), esc(g.fw ?? '—')],
+    [t('kv.radio'), esc(g.radio ?? '—')],
+    [t('kv.channel'), esc(g.channel ?? '—')],
     ['MAC', esc(g.mac ?? '—')],
   ]
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
@@ -66,7 +68,7 @@ function renderRadio(r) {
   state.radio = r
   const pill = $('#radio')
   pill.classList.toggle('hidden', !r || r.state === 'off')
-  const label = { off: '無効', connected: '受信中', connecting: '応答待ち', disconnected: '未接続' }[r?.state ?? 'off']
+  const label = t(`radio.${r?.state ?? 'off'}`)
   if (r && r.state !== 'off') {
     pill.className = `pill ${r.state}`
     pill.textContent = `Sigfox · ${r.state === 'connected' && r.freq ? `${(r.freq / 1e6).toFixed(1)} MHz` : label}`
@@ -75,16 +77,16 @@ function renderRadio(r) {
   $('#radio-detail').innerHTML = (
     r && r.state !== 'off'
       ? [
-          ['状態', `${label}${r.error ? ` — ${esc(r.error)}` : ''}`],
-          ['ポート', esc(r.port ?? '—')],
-          ['ファームウェア', esc(r.fw ?? '—')],
-          ['周波数', r.freq ? `${(r.freq / 1e6).toFixed(3)} MHz` : '—'],
-          ['サンプリング', r.rate ? `${r.rate} Hz` : '—'],
-          ['受信フレーム', `${r.frames} (CRC エラー ${r.badFrames})`],
-          ['最終受信', fmtTime(r.lastFrameAt)],
-          ['欠落行', r.lostLines],
+          [t('kv.state'), `${label}${r.error ? ` — ${esc(r.error)}` : ''}`],
+          [t('kv.port'), esc(r.port ?? '—')],
+          [t('kv.firmware'), esc(r.fw ?? '—')],
+          [t('kv.freq'), r.freq ? `${(r.freq / 1e6).toFixed(3)} MHz` : '—'],
+          [t('kv.rate'), r.rate ? `${r.rate} Hz` : '—'],
+          [t('kv.frames'), t('radio.framesValue', { frames: r.frames, bad: r.badFrames })],
+          [t('kv.lastFrame'), fmtTime(r.lastFrameAt)],
+          [t('kv.lostLines'), r.lostLines],
         ]
-      : [['状態', '無効 (下の設定で受信機のポートを選ぶと有効になります)']]
+      : [[t('kv.state'), t('radio.offHint')]]
   )
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
     .join('')
@@ -94,12 +96,12 @@ function renderRadio(r) {
 const msgBody = $('#msg-table tbody')
 const DL_BADGE = {
   none: '',
-  pending: '<span class="badge warn">待機中</span>',
-  sent: '<span class="badge ok">送信済</span>',
-  acked: '<span class="badge ok">受信確認</span>',
-  failed: '<span class="badge bad">失敗</span>',
-  nodata: '<span class="badge muted">データなし</span>',
-  unsupported: '<span class="badge muted">送信なし</span>',
+  pending: `<span class="badge warn">${t('dl.pending')}</span>`,
+  sent: `<span class="badge ok">${t('dl.sent')}</span>`,
+  acked: `<span class="badge ok">${t('dl.acked')}</span>`,
+  failed: `<span class="badge bad">${t('dl.failed')}</span>`,
+  nodata: `<span class="badge muted">${t('dl.nodata')}</span>`,
+  unsupported: `<span class="badge muted">${t('dl.unsupported')}</span>`,
 }
 const RADIO_BADGE = {
   espnow: '<span class="badge muted">ESP-NOW</span>',
@@ -107,10 +109,10 @@ const RADIO_BADGE = {
 }
 const AUTH_BADGE = {
   ok: '<span class="badge ok">OK</span>',
-  bad: '<span class="badge bad">鍵不一致</span>',
-  unknown: '<span class="badge muted">未登録</span>',
-  public: '<span class="badge muted">公開鍵</span>',
-  unverified: '<span class="badge muted">未検証</span>',
+  bad: `<span class="badge bad">${t('auth.bad')}</span>`,
+  unknown: `<span class="badge muted">${t('auth.unknown')}</span>`,
+  public: `<span class="badge muted">${t('auth.public')}</span>`,
+  unverified: `<span class="badge muted">${t('auth.unverified')}</span>`,
 }
 
 function deviceLabel(id) {
@@ -169,7 +171,7 @@ $('#msg-device').addEventListener('change', () => loadMessages())
 $('#msg-more').addEventListener('click', () => loadMessages(true))
 $('#msg-clear').addEventListener('click', async () => {
   const dev = $('#msg-device').value
-  if (!confirm(dev ? `${dev} のメッセージを削除しますか?` : 'すべてのメッセージを削除しますか?')) return
+  if (!confirm(dev ? t('msg.confirmClearDevice', { device: dev }) : t('msg.confirmClearAll'))) return
   await api(`/messages${dev ? `?device=${dev}` : ''}`, { method: 'DELETE' })
   loadMessages()
 })
@@ -180,22 +182,22 @@ msgBody.addEventListener('click', async (e) => {
   if (!m) return
   $('#msg-detail').innerHTML = [
     ['ID', m.id],
-    ['時刻', fmtTime(m.time)],
-    ['デバイス', deviceLabel(m.deviceId)],
-    ['無線', RADIO_BADGE[m.radio] ?? esc(m.radio)],
-    m.radio === 'sigfox' ? ['受信', 'Sigfox 受信機 (認証は未検証)'] : ['送信元 MAC', esc(m.src)],
+    [t('kv.time'), fmtTime(m.time)],
+    [t('kv.device'), deviceLabel(m.deviceId)],
+    [t('kv.radio'), RADIO_BADGE[m.radio] ?? esc(m.radio)],
+    m.radio === 'sigfox' ? [t('kv.receivedBy'), t('kv.receivedBySigfox')] : [t('kv.srcMac'), esc(m.src)],
     ['Seq', m.seq],
-    ['データ', `<code>${spaced(m.data)}</code>`],
-    ['デコード', m.decoded ? `<code>${esc(JSON.stringify(m.decoded))}</code>` : '—'],
+    [t('kv.data'), `<code>${spaced(m.data)}</code>`],
+    [t('kv.decoded'), m.decoded ? `<code>${esc(JSON.stringify(m.decoded))}</code>` : '—'],
     ['RSSI', `${m.rssi} dBm`],
-    ['受信フレーム', `${m.nbFrames}/3`],
-    ['認証', AUTH_BADGE[m.auth]],
-    ['ダウンリンク', m.ack ? `${DL_BADGE[m.downlinkStatus]} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : '要求なし'],
+    [t('kv.frames'), `${m.nbFrames}/3`],
+    [t('kv.auth'), AUTH_BADGE[m.auth]],
+    [t('kv.downlink'), m.ack ? `${DL_BADGE[m.downlinkStatus]} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : t('kv.noDownlink')],
   ]
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
     .join('')
   const logs = await api(`/callback-logs?message=${m.id}`)
-  $('#msg-logs').innerHTML = logs.length ? logs.map(logBlock).join('') : '<p class="muted">実行されたコールバックはありません。</p>'
+  $('#msg-logs').innerHTML = logs.length ? logs.map(logBlock).join('') : `<p class="muted">${t('msg.noLogs')}</p>`
   $('#msg-dialog').showModal()
 })
 $('#msg-dialog-close').addEventListener('click', () => $('#msg-dialog').close())
@@ -214,10 +216,10 @@ $('#sim-form').addEventListener('submit', async (e) => {
   const f = e.target
   const btn = $('button', f)
   btn.disabled = true
-  $('#sim-result').textContent = f.ack.checked ? 'ダウンリンクを待っています…' : ''
+  $('#sim-result').textContent = f.ack.checked ? t('sim.waiting') : ''
   try {
     const r = await api('/sim/uplink', { method: 'POST', body: { deviceId: f.deviceId.value, data: f.data.value, ack: f.ack.checked } })
-    $('#sim-result').textContent = `送信しました (seq ${r.seq})${f.ack.checked ? ` — ダウンリンク: ${r.downlink ? spaced(r.downlink) : '受信なし'}` : ''}`
+    $('#sim-result').textContent = `${t('sim.sent', { seq: r.seq })}${f.ack.checked ? t('sim.downlink', { data: r.downlink ? spaced(r.downlink) : t('sim.noDownlink') }) : ''}`
     loadDevices()
   } catch (err) {
     $('#sim-result').textContent = err.message
@@ -230,22 +232,22 @@ $('#sim-form').addEventListener('submit', async (e) => {
 async function loadDevices() {
   state.devices = await api('/devices')
   const body = $('#dev-table tbody')
-  const DL = { none: '送らない', static: '固定', callback: 'コールバック' }
+
   body.innerHTML = state.devices
     .map(
       (d) => `<tr data-id="${esc(d.id)}">
         <td><code>${esc(d.id)}</code></td><td>${esc(d.name) || '<span class="muted">—</span>'}</td>
-        <td>${d.key ? '<span class="badge ok">登録済</span>' : '<span class="badge muted">未登録</span>'}</td>
-        <td>${DL[d.downlinkMode]}${d.downlinkMode === 'static' ? ` <code>${d.downlinkData.includes('{') ? d.downlinkData : spaced(d.downlinkData)}</code>` : ''}</td>
+        <td>${d.key ? `<span class="badge ok">${t('dev.registered')}</span>` : `<span class="badge muted">${t('dev.unregistered')}</span>`}</td>
+        <td>${t(`dlMode.${d.downlinkMode}`)}${d.downlinkMode === 'static' ? ` <code>${d.downlinkData.includes('{') ? d.downlinkData : spaced(d.downlinkData)}</code>` : ''}</td>
         <td>${fmtTime(d.lastSeen)}</td><td>${d.lastSeq ?? '—'}</td>
-        <td><button class="small" data-act="edit">編集</button> <button class="small danger" data-act="del">削除</button></td></tr>`,
+        <td><button class="small" data-act="edit">${t('common.edit')}</button> <button class="small danger" data-act="del">${t('common.delete')}</button></td></tr>`,
     )
     .join('')
   $('#dev-empty').classList.toggle('hidden', state.devices.length > 0)
   const sel = $('#msg-device')
   const cur = sel.value
   sel.innerHTML =
-    '<option value="">すべてのデバイス</option>' +
+    `<option value="">${t('msg.allDevices')}</option>` +
     state.devices.map((d) => `<option value="${esc(d.id)}">${esc(d.id)}${d.name ? ` (${esc(d.name)})` : ''}</option>`).join('')
   sel.value = cur
 }
@@ -277,7 +279,7 @@ $('#dev-table tbody').addEventListener('click', async (e) => {
   if (!btn) return
   const d = state.devices.find((x) => x.id === btn.closest('tr').dataset.id)
   if (btn.dataset.act === 'edit') openDevice(d)
-  if (btn.dataset.act === 'del' && confirm(`${d.id} を削除しますか? (メッセージは残ります)`)) {
+  if (btn.dataset.act === 'del' && confirm(t('dev.confirmDelete', { device: d.id }))) {
     await api(`/devices/${d.id}`, { method: 'DELETE' })
     loadDevices()
   }
@@ -298,7 +300,7 @@ $('#dev-form').addEventListener('submit', async (e) => {
       },
     })
     $('#dev-dialog').close()
-    toast('保存しました')
+    toast(t('common.saved'))
     await loadDevices()
     loadMessages()
   } catch (err) {
@@ -312,14 +314,14 @@ async function loadCallbacks() {
   $('#cb-list').innerHTML = state.callbacks
     .map(
       (c) => `<div class="card" data-id="${c.id}">
-        <div><strong>${esc(c.name || `コールバック #${c.id}`)}</strong>
-          ${c.enabled ? '<span class="badge ok">有効</span>' : '<span class="badge muted">無効</span>'}
-          ${c.downlink ? '<span class="badge warn">ダウンリンク</span>' : ''}</div>
+        <div><strong>${esc(c.name || t('cb.untitled', { id: c.id }))}</strong>
+          ${c.enabled ? `<span class="badge ok">${t('cb.enabled')}</span>` : `<span class="badge muted">${t('cb.disabled')}</span>`}
+          ${c.downlink ? `<span class="badge warn">${t('cb.downlink')}</span>` : ''}</div>
         <div class="url"><code>${esc(c.method)}</code> ${esc(c.url)}</div>
-        <div class="muted">対象: ${esc(c.devices || 'すべて')}</div>
-        <div class="actions"><button class="small" data-act="test">テスト送信</button>
-          <button class="small" data-act="edit">編集</button>
-          <button class="small danger" data-act="del">削除</button></div></div>`,
+        <div class="muted">${esc(t('cb.target', { devices: c.devices || t('cb.allDevices') }))}</div>
+        <div class="actions"><button class="small" data-act="test">${t('cb.test')}</button>
+          <button class="small" data-act="edit">${t('common.edit')}</button>
+          <button class="small danger" data-act="del">${t('common.delete')}</button></div></div>`,
     )
     .join('')
   $('#cb-empty').classList.toggle('hidden', state.callbacks.length > 0)
@@ -370,7 +372,7 @@ $('#cb-list').addEventListener('click', async (e) => {
   if (!btn) return
   const c = state.callbacks.find((x) => x.id === Number(btn.closest('.card').dataset.id))
   if (btn.dataset.act === 'edit') openCallback(c)
-  if (btn.dataset.act === 'del' && confirm('このコールバックを削除しますか?')) {
+  if (btn.dataset.act === 'del' && confirm(t('cb.confirmDelete'))) {
     await api(`/callbacks/${c.id}`, { method: 'DELETE' })
     loadCallbacks()
   }
@@ -378,7 +380,11 @@ $('#cb-list').addEventListener('click', async (e) => {
     btn.disabled = true
     try {
       const { result } = await api(`/callbacks/${c.id}/test`, { method: 'POST' })
-      toast(result.ok ? `成功: HTTP ${result.status} (${result.durationMs} ms)${result.downlink ? ` / downlink ${result.downlink}` : ''}` : `失敗: ${result.error}`)
+      toast(
+        result.ok
+          ? `${t('cb.testOk', { status: result.status, ms: result.durationMs })}${result.downlink ? ` / downlink ${result.downlink}` : ''}`
+          : t('cb.testFailed', { error: result.error }),
+      )
     } catch (err) {
       toast(err.message)
     } finally {
@@ -410,7 +416,7 @@ $('#cb-form').addEventListener('submit', async (e) => {
     const id = f.dataset.id
     await api(id ? `/callbacks/${id}` : '/callbacks', { method: id ? 'PUT' : 'POST', body })
     $('#cb-dialog').close()
-    toast('保存しました')
+    toast(t('common.saved'))
     loadCallbacks()
   } catch (err) {
     $('#cb-error').textContent = err.message
@@ -422,12 +428,12 @@ async function loadSettings() {
   const [s, ports] = await Promise.all([api('/settings'), api('/serial/ports')])
   state.settings = s
   const f = $('#settings-form')
-  const opts = [{ path: 'auto', label: '自動検出' }, ...ports]
+  const opts = [{ path: 'auto', label: t('set.autoDetect') }, ...ports]
   if (!opts.some((p) => p.path === s.serialPort)) opts.push({ path: s.serialPort, label: s.serialPort })
   f.serialPort.innerHTML = opts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path !== 'auto' && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.serialPort.value = s.serialPort
   f.serialPort.disabled = state.gateway?.kind === 'sim'
-  const sfOpts = [{ path: '', label: '使わない' }, ...ports]
+  const sfOpts = [{ path: '', label: t('set.notUsed') }, ...ports]
   if (!sfOpts.some((p) => p.path === s.sigfoxPort)) sfOpts.push({ path: s.sigfoxPort, label: s.sigfoxPort })
   f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.sigfoxPort.value = s.sigfoxPort
@@ -455,7 +461,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
         sigfoxDownlink: f.sigfoxDownlink.checked,
       },
     })
-    toast('保存しました')
+    toast(t('common.saved'))
   } catch (err) {
     toast(err.message)
   }
@@ -477,10 +483,23 @@ function connectEvents() {
   es.addEventListener('callbackLog', () => {
     if ($('#tab-callbacks').classList.contains('active')) loadLogs()
   })
-  es.onerror = () => renderGateway({ state: 'disconnected', kind: state.gateway?.kind ?? 'serial', port: null, error: 'ホストに接続できません' })
+  es.onerror = () => renderGateway({ state: 'disconnected', kind: state.gateway?.kind ?? 'serial', port: null, error: t('gw.hostDown') })
 }
 
+// ---------------- language
+const langSel = $('#lang')
+langSel.innerHTML = Object.entries(LANGUAGES)
+  .map(([code, name]) => `<option value="${code}">${name}</option>`)
+  .join('')
+langSel.value = lang
+// 動的に組み立てた部分も含めて描き直すのは手間なので、言語を覚えて読み込み直す
+langSel.addEventListener('change', () => {
+  setLang(langSel.value)
+  location.reload()
+})
+
 // ---------------- boot
+translatePage()
 ;(async () => {
   const status = await api('/status')
   renderGateway(status.gateway)

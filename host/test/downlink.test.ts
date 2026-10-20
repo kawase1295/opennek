@@ -34,17 +34,17 @@ test('{tapid} falls back to zero when the station is not hex', () => {
 })
 
 test('templates are rejected unless they render to exactly 8 bytes', () => {
-  expect(() => parseDownlinkTemplate('{time}0102')).toThrow('8 バイト')
-  expect(() => parseDownlinkTemplate('{time}{time}00')).toThrow('8 バイト')
-  expect(() => parseDownlinkTemplate('')).toThrow('8 バイト')
+  expect(() => parseDownlinkTemplate('{time}0102')).toThrow('8 bytes')
+  expect(() => parseDownlinkTemplate('{time}{time}00')).toThrow('8 bytes')
+  expect(() => parseDownlinkTemplate('')).toThrow('8 bytes')
 })
 
 test('unknown variables, odd hex digits and non-hex characters are rejected', () => {
   expect(() => parseDownlinkTemplate('{foo}01020304')).toThrow('{foo}')
   expect(() => parseDownlinkTemplate('{TIME}01020304')).toThrow('{TIME}')
-  expect(() => parseDownlinkTemplate('{time}010{rssi}0')).toThrow('偶数')
-  expect(() => parseDownlinkTemplate('{time}0102zz{rssi}')).toThrow('16 進')
-  expect(() => parseDownlinkTemplate('{time01020304')).toThrow('16 進')
+  expect(() => parseDownlinkTemplate('{time}010{rssi}0')).toThrow('even number')
+  expect(() => parseDownlinkTemplate('{time}0102zz{rssi}')).toThrow('not hex')
+  expect(() => parseDownlinkTemplate('{time01020304')).toThrow('not hex')
 })
 
 const device = { id: '0a1b2c3d', downlinkMode: 'static' }

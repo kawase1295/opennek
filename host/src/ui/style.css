@@ -61,6 +61,7 @@ nav button.active { background: var(--code); color: var(--text); font-weight: 60
 .pill.connected::before { color: var(--ok); }
 .pill.connecting::before { color: var(--warn); }
 .pill.disconnected::before { color: var(--bad); }
+.lang { font-size: 12.5px; padding: 2px 6px; }
 
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 .tab { display: none; }
@@ -124,6 +125,8 @@ td .decoded { display: block; color: var(--muted); font-size: 12px; white-space:
 .form label > input, .form label > select, .form label > textarea { color: var(--text); }
 .form small { font-size: 12px; }
 label.check { flex-direction: row !important; align-items: center; gap: 8px; color: var(--text) !important; }
+.check-text { display: flex; flex-direction: column; gap: 4px; }
+.check-text small { color: var(--muted); }
 .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 #settings-form { max-width: 560px; }
 #settings-form .actions { justify-content: flex-start; }

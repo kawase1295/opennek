@@ -51,7 +51,7 @@ export function openLinePort(port: string, onLine: (line: string) => void, onErr
   const stty = Bun.spawnSync(['stty', '-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { stderr: 'pipe' })
   if (stty.exitCode !== 0) {
     const err = stty.stderr.toString().trim()
-    const hint = /permission denied/i.test(err) ? ' — `sudo usermod -aG dialout $USER` して再ログインしてください' : ''
+    const hint = /permission denied/i.test(err) ? ' — run `sudo usermod -aG dialout $USER` and log in again' : ''
     throw new Error(`${err}${hint}`)
   }
   const fd = openSync(port, constants.O_RDWR | constants.O_NOCTTY)
@@ -134,7 +134,7 @@ export class SerialGateway extends Gateway {
     const setting = this.portSetting()
     const path = setting === 'auto' ? pickSerialPort(this.exclude()) : setting
     if (!path) {
-      this.setStatus({ state: 'disconnected', port: null, error: 'シリアルポートが見つかりません (ゲートウェイ ESP32 を接続してください)' })
+      this.setStatus({ state: 'disconnected', port: null, error: 'No serial port found (connect the gateway ESP32)' })
       return this.scheduleRetry()
     }
     this.setStatus({ state: 'connecting', port: path, error: undefined })
@@ -149,7 +149,7 @@ export class SerialGateway extends Gateway {
     const askHello = (n: number) => {
       if (!this.port || this.st.state === 'connected') return
       if (n === 0) {
-        this.setStatus({ error: 'ゲートウェイから応答がありません (OpenNEK ゲートウェイのファームを書き込んでください)' })
+        this.setStatus({ error: 'No reply from the gateway (flash the OpenNEK gateway firmware)' })
       }
       this.ping()
       this.helloTimer = setTimeout(() => askHello(n === 0 ? 0 : n - 1), HELLO_TIMEOUT_MS)
@@ -161,7 +161,7 @@ export class SerialGateway extends Gateway {
     if (!this.port) return
     this.log(`serial: ${e instanceof Error ? e.message : String(e)}`)
     this.close()
-    this.setStatus({ state: 'disconnected', error: 'ゲートウェイとの接続が切れました' })
+    this.setStatus({ state: 'disconnected', error: 'Lost the connection to the gateway' })
     this.scheduleRetry()
   }
 

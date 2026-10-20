@@ -22,20 +22,20 @@ export function parseDownlinkTemplate(template: string): DownlinkPart[] {
   let bytes = 0
   for (const [, hex, name] of template.matchAll(/([^{]+)|\{([^}]*)\}/g)) {
     if (hex !== undefined) {
-      if (!/^[0-9a-fA-F]*$/.test(hex)) throw new Error(`16 進でない文字があります: ${hex}`)
-      if (hex.length % 2) throw new Error(`16 進は偶数桁で書いてください: ${hex}`)
+      if (!/^[0-9a-fA-F]*$/.test(hex)) throw new Error(`not hex: ${hex}`)
+      if (hex.length % 2) throw new Error(`hex needs an even number of digits: ${hex}`)
       parts.push({ hex: hex.toLowerCase() })
       bytes += hex.length / 2
     } else {
-      if (!Object.hasOwn(VARIABLES, name!)) throw new Error(`未知の変数 {${name}} (使えるのは {time} {tapid} {rssi})`)
+      if (!Object.hasOwn(VARIABLES, name!)) throw new Error(`unknown variable {${name}} (use {time}, {tapid} or {rssi})`)
       parts.push({ variable: name as Variable })
       bytes += VARIABLES[name as Variable].bytes
     }
   }
   // 閉じていない { は matchAll で拾われずに消えるので、元の文字列と突き合わせる
   const consumed = parts.map((p) => ('hex' in p ? p.hex : `{${p.variable}}`)).join('')
-  if (consumed.length !== template.length) throw new Error(`16 進でない文字があります: ${template}`)
-  if (bytes !== DOWNLINK_BYTES) throw new Error(`${DOWNLINK_BYTES} バイトになるように書いてください (現在 ${bytes} バイト)`)
+  if (consumed.length !== template.length) throw new Error(`not hex: ${template}`)
+  if (bytes !== DOWNLINK_BYTES) throw new Error(`must be ${DOWNLINK_BYTES} bytes (got ${bytes})`)
   return parts
 }
 
