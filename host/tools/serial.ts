@@ -1,9 +1,7 @@
-import { spawnSync } from 'node:child_process'
-import { constants, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { ReadStream as TtyReadStream } from 'node:tty'
+import { SerialPort } from 'serialport'
 
-// Minimal Linux serial port for the CLI tools: stty for line settings, plain fd for I/O.
+// Serial port for the CLI tools on top of serialport: raw bytes, a line mode and a changeable baud rate.
 // Through the OpenNEK ESP32-S3 bridge (hardware USB serial, which ignores the host's baud rate) the
 // UART baud rate is changed with the bridge's in-band command instead.
 export type Port = {
@@ -16,28 +14,21 @@ export type Port = {
   close(): Promise<void>
 }
 
-function stty(path: string, baud: number) {
-  const r = spawnSync('stty', ['-F', path, String(baud), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { encoding: 'utf8' })
-  if (r.status !== 0) throw new Error(`stty ${path}: ${(r.stderr || r.error?.message || '').trim()}`)
-}
-
 const BRIDGE_GUARD_MS = 160
 
-// The bridge enumerates as the S3's "USB JTAG/serial debug unit"; OPENNEK_BRIDGE=0/1 overrides
-export function isBridge(path: string) {
+// The bridge enumerates as the S3's "USB JTAG/serial debug unit" (303a:1001); OPENNEK_BRIDGE=0/1 overrides
+export async function isBridge(path: string) {
   if (process.env.OPENNEK_BRIDGE) return process.env.OPENNEK_BRIDGE === '1'
-  const byId = '/dev/serial/by-id'
-  if (!existsSync(byId)) return false
-  const real = realpathSync(path)
-  return readdirSync(byId).some((name) => /USB_JTAG_serial_debug_unit/.test(name) && realpathSync(`${byId}/${name}`) === real)
+  const port = (await SerialPort.list()).find((p) => p.path === path || p.path.replace(/^\/dev\/tty\./, '/dev/cu.') === path)
+  return port?.vendorId?.toLowerCase() === '303a' && port.productId?.toLowerCase() === '1001'
 }
 
-export function openPort(path: string, baud: number): Port {
-  stty(path, baud)
-  const bridge = isBridge(path)
+export async function openPort(path: string, baud: number): Promise<Port> {
+  const bridge = await isBridge(path)
   let lastWrite = 0
-  const fd = openSync(path, constants.O_RDWR | constants.O_NOCTTY)
-  const stream = new TtyReadStream(fd)
+  const stream = new SerialPort({ path, baudRate: baud, autoOpen: false })
+  await new Promise<void>((resolve, reject) => stream.open((e) => (e ? reject(new Error(`${path}: ${e.message}`)) : resolve())))
+  const drained = () => new Promise<void>((resolve) => stream.drain(() => resolve()))
   let buf: number[] = []
   let lineBuf = ''
   let waiter: (() => void) | null = null
@@ -72,15 +63,16 @@ export function openPort(path: string, baud: number): Port {
   return {
     write(data) {
       lastWrite = Date.now()
-      if (typeof data === 'string') writeSync(fd, data)
-      else writeSync(fd, data)
+      stream.write(typeof data === 'string' ? Buffer.from(data, 'latin1') : data)
     },
     async setBaud(b) {
-      stty(path, b)
+      await drained()
+      await new Promise<void>((resolve, reject) => stream.update({ baudRate: b }, (e) => (e ? reject(e) : resolve())))
       if (!bridge) return
       // The command is only recognised after a quiet period; its "~~~OK" reply is discarded
       await sleep(Math.max(0, BRIDGE_GUARD_MS - (Date.now() - lastWrite)))
-      writeSync(fd, `~~~OPENNEK:BAUD=${b}\n`)
+      stream.write(`~~~OPENNEK:BAUD=${b}\n`)
+      await drained()
       lastWrite = Date.now()
       await wait(100)
       await sleep(20)
@@ -114,8 +106,8 @@ export function openPort(path: string, baud: number): Port {
     onLine: (cb) => void lineListeners.push(cb),
     close: () =>
       new Promise((resolve) => {
-        stream.once('close', () => resolve())
-        stream.destroy()
+        if (!stream.isOpen) return resolve()
+        void drained().then(() => stream.close(() => resolve()))
       }),
   }
 }

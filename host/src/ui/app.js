@@ -380,7 +380,7 @@ async function loadSettings() {
   const f = $('#settings-form')
   const sfOpts = [{ path: '', label: t('set.notUsed') }, ...ports]
   if (!sfOpts.some((p) => p.path === s.sigfoxPort)) sfOpts.push({ path: s.sigfoxPort, label: s.sigfoxPort })
-  f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
+  f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && !p.label.includes(p.path) ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.sigfoxPort.value = s.sigfoxPort
   f.sigfoxFreq.value = s.sigfoxFreq
   f.sigfoxDownlink.checked = s.sigfoxDownlink
