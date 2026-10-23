@@ -37,14 +37,18 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    `opennek-<version>-macos-x64`（Intel Mac）があります。チェックサムは `SHA256SUMS` にあります。
 4. キットのシリアルポートを指定して起動します。
    ```bash
-   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --open --sigfox /dev/ttyACM0     # Linux
-   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --open --sigfox /dev/cu.usbmodem1101   # macOS
-   .\opennek-<version>-windows-x64.exe --open --sigfox COM3       # Windows（PowerShell）
+   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
+   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
+   .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows（PowerShell）
    ```
-   `--sigfox` を省くと、Web UI でポートを選べます。オプションの一覧は `--help` で表示されます。
+   起動するとブラウザで Web UI が開きます（開かないようにするには `--no-open`）。`--sigfox` を省くと、Web UI でポートを選べます。
+   オプションの一覧は `--help` で表示されます。Windows では `.exe` をダブルクリックしても起動します。
 
-   OpenNEK はダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
+   Linux と macOS では、ダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
    ファイルマネージャーでダブルクリックしても起動しません。Linux では「There is no app installed for executable files」と表示されます。
+
+   Linux では一度 `./opennek-*-linux-x64 install` を実行すると、アプリのメニューに OpenNEK が追加され、以後はそこからクリックで起動できます
+   （端末のウィンドウにログが出て、閉じると終了します）。`opennek uninstall` で元に戻せます。
 
    実行ファイルには署名がありません。Windows で SmartScreen の「Windows によって PC が保護されました」が出たら、
    **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
