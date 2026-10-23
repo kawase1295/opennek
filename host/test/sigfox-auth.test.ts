@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { decodeUplinkBits } from '../src/sigfox/frame'
 import { PUBLIC_KEY, uplinkAuth, verifyUplink } from '../src/sigfox/auth'
 

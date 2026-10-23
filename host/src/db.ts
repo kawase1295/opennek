@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod/v4'
 import { parseDownlinkTemplate } from './downlink'
 import { parsePayloadConfig } from './payload'
@@ -164,46 +164,57 @@ const toLog = (r: Row): CallbackLog => ({
 })
 
 export class Store {
-  readonly db: Database
+  readonly db: DatabaseSync
 
   constructor(path: string) {
-    this.db = new Database(path, { create: true, strict: true })
-    this.db.run('PRAGMA journal_mode = WAL')
-    this.db.run(SCHEMA)
+    this.db = new DatabaseSync(path)
+    this.db.exec('PRAGMA journal_mode = WAL')
+    this.db.exec(SCHEMA)
     // DBs from before the ESP-NOW network was removed (#19) mark each message with the radio it came in on.
     // Messages of the ESP-NOW devices cannot be told apart from Sigfox ones without that column, so drop them first
-    const cols = this.db.query('PRAGMA table_info(messages)').all() as Row[]
+    const cols = this.db.prepare('PRAGMA table_info(messages)').all() as Row[]
     if (cols.some((c) => c.name === 'radio')) {
-      this.db.transaction(() => {
-        this.db.run("DELETE FROM callback_logs WHERE message_id IN (SELECT id FROM messages WHERE radio != 'sigfox')")
-        this.db.run("DELETE FROM messages WHERE radio != 'sigfox'")
-        this.db.run('ALTER TABLE messages DROP COLUMN radio')
-      })()
+      this.transaction(() => {
+        this.db.exec("DELETE FROM callback_logs WHERE message_id IN (SELECT id FROM messages WHERE radio != 'sigfox')")
+        this.db.exec("DELETE FROM messages WHERE radio != 'sigfox'")
+        this.db.exec('ALTER TABLE messages DROP COLUMN radio')
+      })
     }
     // src was the MAC address of the ESP-NOW device, where its downlinks went
-    if (cols.some((c) => c.name === 'src')) this.db.run('ALTER TABLE messages DROP COLUMN src')
+    if (cols.some((c) => c.name === 'src')) this.db.exec('ALTER TABLE messages DROP COLUMN src')
+  }
+
+  private transaction(fn: () => void) {
+    this.db.exec('BEGIN')
+    try {
+      fn()
+      this.db.exec('COMMIT')
+    } catch (e) {
+      this.db.exec('ROLLBACK')
+      throw e
+    }
   }
 
   // --- settings
   getSettings(): Settings {
-    const row = this.db.query('SELECT data FROM settings WHERE id = 1').get() as Row | null
+    const row = this.db.prepare('SELECT data FROM settings WHERE id = 1').get() as Row | undefined
     return Settings.parse(row ? JSON.parse(row.data) : {})
   }
   saveSettings(s: Settings) {
-    this.db.query('INSERT OR REPLACE INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(s))
+    this.db.prepare('INSERT OR REPLACE INTO settings (id, data) VALUES (1, ?)').run(JSON.stringify(s))
   }
 
   // --- devices
   listDevices(): Device[] {
-    return (this.db.query('SELECT * FROM devices ORDER BY id').all() as Row[]).map(toDevice)
+    return (this.db.prepare('SELECT * FROM devices ORDER BY id').all() as Row[]).map(toDevice)
   }
   getDevice(id: string): Device | null {
-    const r = this.db.query('SELECT * FROM devices WHERE id = ?').get(id) as Row | null
+    const r = this.db.prepare('SELECT * FROM devices WHERE id = ?').get(id) as Row | undefined
     return r ? toDevice(r) : null
   }
   upsertDevice(d: DeviceInput): Device {
     this.db
-      .query(
+      .prepare(
         `INSERT INTO devices (id, name, key, downlink_mode, downlink_data, payload_config, created_at)
          VALUES ($id, $name, $key, $mode, $data, $payload, $now)
          ON CONFLICT (id) DO UPDATE SET name = $name, key = $key, downlink_mode = $mode, downlink_data = $data, payload_config = $payload`,
@@ -212,16 +223,16 @@ export class Store {
     return this.getDevice(d.id)!
   }
   deleteDevice(id: string) {
-    this.db.query('DELETE FROM devices WHERE id = ?').run(id)
+    this.db.prepare('DELETE FROM devices WHERE id = ?').run(id)
   }
   touchDevice(id: string, seq: number, time: number) {
-    this.db.query('UPDATE devices SET last_seen = ?, last_seq = ? WHERE id = ?').run(time, seq, id)
+    this.db.prepare('UPDATE devices SET last_seen = ?, last_seq = ? WHERE id = ?').run(time, seq, id)
   }
 
   // --- messages
   insertMessage(m: Omit<Message, 'id'>): Message {
     const r = this.db
-      .query(
+      .prepare(
         `INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, station, decoded, downlink, downlink_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
@@ -229,7 +240,7 @@ export class Store {
         m.deviceId, m.time, m.seq, m.data, m.ack ? 1 : 0, m.oob ? 1 : 0, m.rssi, m.nbFrames, m.auth,
         m.station, m.decoded ? JSON.stringify(m.decoded) : null, m.downlink, m.downlinkStatus,
       ) as Row
-    this.db.query('DELETE FROM messages WHERE id <= ?').run(r.id - MAX_MESSAGES)
+    this.db.prepare('DELETE FROM messages WHERE id <= ?').run(r.id - MAX_MESSAGES)
     return toMessage(r)
   }
   updateMessage(id: number, patch: Partial<Pick<Message, 'downlink' | 'downlinkStatus' | 'decoded'>>): Message | null {
@@ -237,18 +248,18 @@ export class Store {
     if (!cur) return null
     const next = { ...cur, ...patch }
     this.db
-      .query('UPDATE messages SET downlink = ?, downlink_status = ?, decoded = ? WHERE id = ?')
+      .prepare('UPDATE messages SET downlink = ?, downlink_status = ?, decoded = ? WHERE id = ?')
       .run(next.downlink, next.downlinkStatus, next.decoded ? JSON.stringify(next.decoded) : null, id)
     return next
   }
   getMessage(id: number): Message | null {
-    const r = this.db.query('SELECT * FROM messages WHERE id = ?').get(id) as Row | null
+    const r = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as Row | undefined
     return r ? toMessage(r) : null
   }
   listMessages(opts: { deviceId?: string; before?: number; limit?: number } = {}): Message[] {
     const limit = Math.min(opts.limit ?? 100, 1000)
     const rows = this.db
-      .query(
+      .prepare(
         `SELECT * FROM messages WHERE ($dev IS NULL OR device_id = $dev) AND ($before IS NULL OR id < $before)
          ORDER BY id DESC LIMIT $limit`,
       )
@@ -256,13 +267,13 @@ export class Store {
     return rows.map(toMessage)
   }
   clearMessages(deviceId?: string) {
-    if (deviceId) this.db.query('DELETE FROM messages WHERE device_id = ?').run(deviceId)
-    else this.db.run('DELETE FROM messages')
+    if (deviceId) this.db.prepare('DELETE FROM messages WHERE device_id = ?').run(deviceId)
+    else this.db.exec('DELETE FROM messages')
   }
 
   // --- callbacks
   listCallbacks(): Callback[] {
-    return (this.db.query('SELECT * FROM callbacks ORDER BY id').all() as Row[]).map((r) => ({
+    return (this.db.prepare('SELECT * FROM callbacks ORDER BY id').all() as Row[]).map((r) => ({
       ...CallbackInput.parse(JSON.parse(r.data)),
       id: r.id,
     }))
@@ -271,31 +282,31 @@ export class Store {
     return this.listCallbacks().find((c) => c.id === id) ?? null
   }
   createCallback(c: CallbackInput): Callback {
-    const r = this.db.query('INSERT INTO callbacks (data) VALUES (?) RETURNING id').get(JSON.stringify(c)) as Row
+    const r = this.db.prepare('INSERT INTO callbacks (data) VALUES (?) RETURNING id').get(JSON.stringify(c)) as Row
     return { ...c, id: r.id }
   }
   updateCallback(id: number, c: CallbackInput): Callback | null {
-    const res = this.db.query('UPDATE callbacks SET data = ? WHERE id = ?').run(JSON.stringify(c), id)
+    const res = this.db.prepare('UPDATE callbacks SET data = ? WHERE id = ?').run(JSON.stringify(c), id)
     return res.changes ? { ...c, id } : null
   }
   deleteCallback(id: number) {
-    this.db.query('DELETE FROM callbacks WHERE id = ?').run(id)
+    this.db.prepare('DELETE FROM callbacks WHERE id = ?').run(id)
   }
 
   // --- callback logs
   insertLog(l: Omit<CallbackLog, 'id'>): CallbackLog {
     const r = this.db
-      .query(
+      .prepare(
         `INSERT INTO callback_logs (callback_id, message_id, time, status, ok, error, duration_ms, response)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
       .get(l.callbackId, l.messageId, l.time, l.status, l.ok ? 1 : 0, l.error, l.durationMs, l.response) as Row
-    this.db.query('DELETE FROM callback_logs WHERE id <= ?').run(r.id - MAX_LOGS)
+    this.db.prepare('DELETE FROM callback_logs WHERE id <= ?').run(r.id - MAX_LOGS)
     return toLog(r)
   }
   listLogs(opts: { callbackId?: number; messageId?: number; limit?: number } = {}): CallbackLog[] {
     const rows = this.db
-      .query(
+      .prepare(
         `SELECT * FROM callback_logs WHERE ($cb IS NULL OR callback_id = $cb) AND ($msg IS NULL OR message_id = $msg)
          ORDER BY id DESC LIMIT $limit`,
       )

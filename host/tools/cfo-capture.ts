@@ -1,15 +1,17 @@
 // Records RSSI and the GFSK carrier frequency offset (CFO) register from the LSM100A streamer (fw >= 0.2.0)
 // to see whether the CFO follows a Sigfox uplink (#6).
-//   bun tools/cfo-capture.ts /dev/ttyACM0 [--pd 0] [--bw 10] [--freq 923200000] [--retune] [--out cfo]
+//   npx tsx tools/cfo-capture.ts /dev/ttyACM0 [--pd 0] [--bw 10] [--freq 923200000] [--retune] [--out cfo]
 // Stop with Ctrl+C: prints the CFO inside every burst and writes <out>.json.
 // --retune: once the CFO of the first frame of a message has settled, tune to it, so that frames 2 and 3 of a
 // message with the downlink flag (frame 1 +/- 6 kHz) land close to the receiver frequency, where an error in
 // the CFO scale hardly matters. Their midpoint is then frame 1. Back to --freq after 10 s without a signal.
 import { writeFileSync } from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
 import { findBursts } from '../src/sigfox/demod'
 import { CFO_EVERY, cfoSigned, cfoStepHz, RC3_DELTA_F_MF_HZ } from '../src/sigfox/frequency'
 import { openPort } from './serial'
+import { isMain } from './main'
 
 const DEFAULT_FREQ = 923_200_000
 const ABOVE_DB = 15 // a sample this far above the noise floor counts as signal
@@ -21,7 +23,7 @@ const median = (xs: number[]) => {
   return s.length ? s[Math.floor(s.length / 2)]! : Number.NaN
 }
 
-if (import.meta.main) {
+if (isMain(import.meta.url)) {
   const { values: args, positionals } = parseArgs({
     allowPositionals: true,
     options: {
@@ -34,7 +36,7 @@ if (import.meta.main) {
   })
   const path = positionals[0]
   if (!path) {
-    console.error('usage: bun tools/cfo-capture.ts <serial port> [--pd code] [--bw code] [--freq hz] [--retune] [--out name]')
+    console.error('usage: npx tsx tools/cfo-capture.ts <serial port> [--pd code] [--bw code] [--freq hz] [--retune] [--out name]')
     process.exit(2)
   }
   const bw = Number(args.bw)
@@ -138,7 +140,7 @@ if (import.meta.main) {
   const finish = async () => {
     clearInterval(timer)
     port.write('C0\n')
-    await Bun.sleep(100)
+    await sleep(100)
     await port.close()
     const dbm = Float32Array.from(raw, (r) => -r / 2)
     const bursts = findBursts(dbm, rate)

@@ -1,7 +1,9 @@
+import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
+import { serve } from '@hono/node-server'
 import { Settings, Store } from './db'
 import { Engine } from './engine'
 import { SigfoxRadio } from './radio'
@@ -82,18 +84,18 @@ engine.on((e) => {
 })
 
 const app = createApp(engine)
-const server = Bun.serve({ port: Number(args.port), hostname: args.host, fetch: app.fetch, idleTimeout: 0 })
-const url = `http://${args.host === '0.0.0.0' ? 'localhost' : args.host}:${server.port}/`
-console.log(`OpenNEK ${VERSION} — ${url}  data: ${dataDir}`)
+const server = serve({ port: Number(args.port), hostname: args.host, fetch: app.fetch }, (info) => {
+  const url = `http://${args.host === '0.0.0.0' ? 'localhost' : args.host}:${info.port}/`
+  console.log(`OpenNEK ${VERSION} — ${url}  data: ${dataDir}`)
+  if (args.open) spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+})
 sigfox.start()
-
-if (args.open) {
-  Bun.spawn(['xdg-open', url], { stdout: 'ignore', stderr: 'ignore' }).exited.catch(() => {})
-}
 
 const shutdown = async () => {
   await sigfox.stop()
-  server.stop(true)
+  // SSE connections stay open, so close them instead of waiting
+  if ('closeAllConnections' in server) server.closeAllConnections()
+  server.close()
   store.db.close()
   process.exit(0)
 }

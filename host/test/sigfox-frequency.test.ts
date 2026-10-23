@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type RadioMessage, SigfoxRadio } from '../src/radio'
@@ -21,7 +21,7 @@ test('CFO register values are 12-bit signed', () => {
 
 // Streamer lines of a cfo-capture recording: R and C lines, and a status line wherever the receiver was retuned
 function* streamerLines(file: string) {
-  const d = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures', file), 'utf8'))
+  const d = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', file), 'utf8'))
   const raw = Buffer.from(d.raw, 'base64')
   const status = (f: number) => `I fw=0.2.0 f=${f} bw=10 sr=2000 boost=1 cfo=1 pd=4`
   const tuning: { at: number; freq: number }[] = d.tuning.length ? d.tuning : [{ at: 0, freq: 923_200_000 }]
@@ -93,7 +93,7 @@ test('following the signal tunes to frame 1 while it is still on air', () => {
 })
 
 test('without frame 1, its end is estimated from frames 2 and 3', () => {
-  const d = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures', 'cfo-rc3-00763DA3-dl.json'), 'utf8'))
+  const d = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'cfo-rc3-00763DA3-dl.json'), 'utf8'))
   const raw = Buffer.from(d.raw, 'base64')
   const run = (data: Uint8Array) => {
     const out: { ranks: number[]; firstFrameEnd: number | null }[] = []

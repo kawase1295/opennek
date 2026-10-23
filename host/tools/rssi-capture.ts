@@ -1,5 +1,5 @@
 // Record the RSSI stream of the OpenNEK LSM100A streamer and report the bursts it sees.
-//   bun tools/rssi-capture.ts /dev/ttyACM0 [--freq 923200000] [--bw 10] [--rate 2000] [--out capture]
+//   npx tsx tools/rssi-capture.ts /dev/ttyACM0 [--freq 923200000] [--bw 10] [--rate 2000] [--out capture]
 // Writes <out>.json (all samples) and <out>.html (a plot of every burst) when stopped with Ctrl+C.
 import { writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
@@ -8,6 +8,7 @@ import { openPort } from './serial'
 // Same detector as the Sigfox decoder: well above the noise floor, at least 300 ms long
 export { type Burst, findBursts } from '../src/sigfox/demod'
 import { type Burst, findBursts } from '../src/sigfox/demod'
+import { isMain } from './main'
 
 export function plotHtml(dbm: Float32Array, rate: number, bursts: Burst[], meta: Record<string, unknown>) {
   const W = 1200
@@ -35,7 +36,7 @@ polyline{fill:none;stroke:#2277aa;stroke-width:1;vector-effect:non-scaling-strok
 <body><h1>RSSI capture</h1><pre>${JSON.stringify(meta, null, 2)}</pre>${svgs.join('\n') || '<p>No bursts found.</p>'}</body></html>`
 }
 
-if (import.meta.main) {
+if (isMain(import.meta.url)) {
   const { values: args, positionals } = parseArgs({
     allowPositionals: true,
     options: {
@@ -48,7 +49,7 @@ if (import.meta.main) {
   })
   const path = positionals[0]
   if (!path) {
-    console.error('usage: bun tools/rssi-capture.ts <serial port> [--freq hz] [--bw code] [--rate hz] [--boost 0|1] [--out name]')
+    console.error('usage: npx tsx tools/rssi-capture.ts <serial port> [--freq hz] [--bw code] [--rate hz] [--boost 0|1] [--out name]')
     process.exit(2)
   }
   const port = openPort(path, 115200)

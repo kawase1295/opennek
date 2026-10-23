@@ -1,9 +1,11 @@
-import { afterAll, expect, test } from 'bun:test'
-import { constants, createReadStream, existsSync, mkdtempSync, openSync, writeSync } from 'node:fs'
+import { afterAll, expect, test } from 'vitest'
+import { constants, existsSync, mkdtempSync, openSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ReadStream as TtyReadStream } from 'node:tty'
 import { bootloaderOutput, crc16, headerBlock, ymodemBlock } from '../tools/lsm-flash'
 import { findBursts, plotHtml } from '../tools/rssi-capture'
+import { hasCommand, ptyPair, run, sleep } from './helpers'
 
 test('crc16 matches the XMODEM check value', () => {
   expect(crc16(new TextEncoder().encode('123456789'))).toBe(0x31c3)
@@ -59,17 +61,17 @@ test('streamer samples that contain CCC are not taken for the bootloader', () =>
 })
 
 // A fake SJI IAP bootloader on one side of a pty pair; lsm-flash.ts drives the other side
-const hasSocat = Bun.which('socat') !== null
+const hasSocat = hasCommand('socat')
 const dir = mkdtempSync(join(tmpdir(), 'opennek-iap-'))
 const devSide = join(dir, 'dev')
 const hostSide = join(dir, 'host')
-const socat = hasSocat ? Bun.spawn(['socat', `pty,raw,echo=0,link=${devSide}`, `pty,raw,echo=0,link=${hostSide}`], { stderr: 'ignore' }) : null
+const socat = hasSocat ? ptyPair(devSide, hostSide) : null
 afterAll(() => socat?.kill())
 
 test.skipIf(!hasSocat)('lsm-flash sends an image through the IAP ymodem dialog', async () => {
-  for (let i = 0; i < 50 && !(existsSync(devSide) && existsSync(hostSide)); i++) await Bun.sleep(20)
+  for (let i = 0; i < 50 && !(existsSync(devSide) && existsSync(hostSide)); i++) await sleep(20)
   const fd = openSync(devSide, constants.O_RDWR | constants.O_NOCTTY)
-  const rs = createReadStream('', { fd })
+  const rs = new TtyReadStream(fd)
   let pending: number[] = []
   let received: number[] = []
   type State = 'menu' | 'header' | 'data' | 'final' | 'done'
@@ -129,10 +131,8 @@ test.skipIf(!hasSocat)('lsm-flash sends an image through the IAP ymodem dialog',
   new DataView(image.buffer).setUint32(4, 0x08006415, true)
   for (let i = 8; i < image.length; i++) image[i] = (i * 7) & 0xff
   const file = join(dir, 'fw.bin')
-  await Bun.write(file, image)
-  const proc = Bun.spawn(['bun', join(import.meta.dir, '../tools/lsm-flash.ts'), hostSide, file], { stdout: 'pipe', stderr: 'pipe' })
-  const code = await proc.exited
-  const out = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text())
+  writeFileSync(file, image)
+  const { code, out } = await run(process.execPath, ['--import', 'tsx', join(import.meta.dirname, '../tools/lsm-flash.ts'), hostSide, file])
   clearInterval(askCrc)
   rs.destroy()
   expect(out).toContain('Done.')

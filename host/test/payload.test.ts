@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { fromHex } from '../src/hex'
 import { decodePayload, parsePayloadConfig } from '../src/payload'
 

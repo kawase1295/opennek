@@ -10,17 +10,16 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
 
 ```
 ┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB シリアル ┌───────────────────────┐  HTTP   ┌──────────┐
-│ Sigfox       │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Bun + Hono)  │ ──────▶ │ あなたの │
+│ Sigfox       │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Node + Hono) │ ──────▶ │ あなたの │
 │ デバイス      │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ アプリ   │
 └──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | 部品 | 中身 |
 |---|---|
-| `host/` | ホスト。Bun + Hono + bun:sqlite。Sigfox の解読器、Web UI、コールバック、ダウンリンク |
+| `host/` | ホスト。Node.js + Hono + node:sqlite。Sigfox の解読器、Web UI、コールバック、ダウンリンク |
 | `firmware/` | PlatformIO (Arduino) ファーム。`radio-xiao-sx1262` = 無線機。Wio-SX1262 の RSSI をホストへ流し、ダウンリンクを送信する |
 | `docs/protocol.ja.md` | コールバックとダウンリンクの仕様 |
-| `packaging/build-deb.sh` | Ubuntu 向けの `.deb` を作る |
 
 ---
 
@@ -31,11 +30,12 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. キットのシリアルポートを指定してホストを起動します。
+3. キットのシリアルポートを指定してホストを起動します（Node.js 22.13 以降）。
    ```bash
    cd host
-   bun install
-   bun run start -- --sigfox /dev/ttyACM0
+   npm install
+   npm run build
+   npm start -- --sigfox /dev/ttyACM0
    ```
 
 <http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
@@ -43,6 +43,8 @@ Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッ�
 UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（ブラウザに保存されます）。
 
 シリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
+
+データは `~/.local/share/opennek/` に保存されます。
 
 ### アップリンクの認証
 
@@ -116,21 +118,10 @@ usbipd attach --wsl --busid <BUSID>
 
 Web UI は Windows のブラウザから <http://localhost:8085/> で開けます。
 
-## .deb を作る
-
-```bash
-./packaging/build-deb.sh     # → dist/opennek_0.1.0_amd64.deb
-sudo apt install ./dist/opennek_0.1.0_amd64.deb
-opennek --open --sigfox /dev/ttyACM0     # または: systemctl --user enable --now opennek
-```
-
-ホストは `bun build --compile` で単一バイナリにしてあるので、Bun や Node がなくても動きます。
-データは `~/.local/share/opennek/` に保存されます。
-
 ## 開発
 
 ```bash
-(cd host && bun test && bun run typecheck)
+(cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)

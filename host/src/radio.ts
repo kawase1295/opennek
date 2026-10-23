@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import { toHex } from './hex'
 import { FrequencyTracker } from './sigfox/frequency'
 import { type SigfoxMessage, SigfoxReceiver } from './sigfox/receiver'
@@ -60,8 +61,8 @@ export class SigfoxRadio implements SigfoxTransmitter {
   private port: LinePort | null = null
   private closing: Promise<void> = Promise.resolve()
   private stopped = true
-  private retry: Timer | null = null
-  private watchdog: Timer | null = null
+  private retry: NodeJS.Timeout | null = null
+  private watchdog: NodeJS.Timeout | null = null
   private rx: SigfoxReceiver | null = null
   private tracker: FrequencyTracker | null = null
   private txReply: ((result: string) => void) | null = null
@@ -120,7 +121,7 @@ export class SigfoxRadio implements SigfoxTransmitter {
         this.log(`sigfox: TX ${(tx.freqHz / 1e6).toFixed(6)} MHz ${TX_DBM} dBm: ${result ?? 'no reply'}`)
         if (result?.startsWith('ok')) return true
         if (!result?.startsWith('busy')) return false
-        await Bun.sleep(TX_RETRY_MS)
+        await sleep(TX_RETRY_MS)
       }
     } finally {
       this.write('E0')

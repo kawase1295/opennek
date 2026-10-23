@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { PUBLIC_KEY } from '../src/sigfox/auth'
 import { crc8, encodeDownlink, whiten } from '../src/sigfox/downlink'
 
