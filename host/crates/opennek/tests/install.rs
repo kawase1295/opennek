@@ -23,6 +23,8 @@ fn files_go_where_the_desktop_looks_for_them() {
     assert_eq!(p.bin, Path::new("/home/u/.local/bin/opennek"));
 }
 
+// The entry is for Linux desktops; elsewhere the paths in it have other separators
+#[cfg(unix)]
 #[test]
 fn the_menu_entry_runs_the_installed_copy_in_a_terminal() {
     let p = InstallPaths::new(Path::new("/home/a user"), None);
