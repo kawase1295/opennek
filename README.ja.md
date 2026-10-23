@@ -2,120 +2,100 @@
 
 [English](README.md) | **日本語**
 
-ESP32 2 台と PC だけで動く、**LPWAN（Sigfox 風）ネットワークのエミュレータ**です。
-デバイスから 12 バイトのアップリンクを送り、それを PC の Web UI で見たり、HTTP コールバックで
-自分のアプリへ転送したり、8 バイトのダウンリンクを返したりできます。
-クラウドの契約や電波の免許を用意しなくても、IoT アプリの開発とテストを手元で回せます。
+PC で動く、**本物の Sigfox デバイス（RC3、日本）のためのローカルネットワーク**です。SDR ドングルの代わりに、
+Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使います。
+デバイスのアップリンクを Web UI で見たり、Sigfox 互換の HTTP コールバックで自分のアプリへ転送したり、
+8 バイトのダウンリンクを返したりできます。
+バックエンドの契約を用意しなくても、Sigfox アプリの開発とテストを手元で回せます。
 
 ```
-┌────────────┐  ESP-NOW (2.4GHz)  ┌──────────────┐  USB シリアル  ┌───────────────────────┐  HTTP   ┌──────────┐
-│ デバイス    │ ─ uplink ×3 ────▶ │ ゲートウェイ │ ─ JSON Lines ─▶│ opennek (Bun + Hono)  │ ──────▶ │ あなたの │
-│ ESP32       │ ◀──── downlink ── │ ESP32 (USB)  │ ◀───────────── │ Web UI / SQLite       │ ◀────── │ アプリ   │
-│ AT モデム   │                    └──────────────┘                └───────────────────────┘         └──────────┘
-└────────────┘
+┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB シリアル ┌───────────────────────┐  HTTP   ┌──────────┐
+│ Sigfox       │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Rust)        │ ──────▶ │ あなたの │
+│ デバイス      │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ アプリ   │
+└──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | 部品 | 中身 |
 |---|---|
-| `host/` | ホスト。Bun + Hono + bun:sqlite。Web UI、コールバック、ダウンリンク、シミュレータ |
-| `firmware/` | PlatformIO (Arduino)。`gateway` = USB ブリッジ、`device` = Sigfox 風 AT モデムエミュレータ |
-| `firmware-lsm100a/` | 実験中: 実機の Sigfox (RC3) アップリンクを受けるため RSSI を流す LSM100A 用ファーム（[詳細](firmware-lsm100a/README.ja.md)） |
-| `docs/protocol.ja.md` | 無線フレーム・シリアル・コールバックの仕様 |
-| `packaging/build-deb.sh` | Ubuntu 向けの `.deb` を作る |
-
-> **Sigfox との関係**: 無線は ESP-NOW なので、**本物の Sigfox モジュールの電波は受信できません**。その代わり、AT コマンドとコールバックの形式を
-> Sigfox に寄せてあるので、Sigfox 向けのアプリやツールをほぼそのまま試せます。
+| `host/` | ホスト。Rust の単一実行ファイル（axum、SQLite）。Sigfox の解読器、Web UI（`host/ui` を同梱）、コールバック、ダウンリンク |
+| `tools/lsm/` | LSM100A 受信機用の Node ツール。ブリッジ経由のファーム書き込み、RSSI/CFO の録音 |
+| `firmware/` | PlatformIO (Arduino) ファーム。`radio-xiao-sx1262` = 無線機。Wio-SX1262 の RSSI をホストへ流し、ダウンリンクを送信する |
+| `docs/protocol.ja.md` | コールバックとダウンリンクの仕様 |
 
 ---
 
-## とりあえず動かす（ハードウェア不要）
+## 使い始める
 
-```bash
-cd host
-bun install
-bun run sim
-```
+1. XIAO ESP32S3 を Wio-SX1262 に挿し、キット付属のアンテナをつなぎます。
+2. 無線機のファームウェアを書き込みます。
+   ```bash
+   cd firmware && pio run -e radio-xiao-sx1262 -t upload
+   ```
+3. [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest) から OS に合ったホストをダウンロードします。
+   実行ファイル 1 つだけで、ほかに入れるものはありません。
+   `opennek-<version>-linux-x64`、`opennek-<version>-windows-x64.exe`、`opennek-<version>-macos-arm64`（Apple シリコン）、
+   `opennek-<version>-macos-x64`（Intel Mac）があります。チェックサムは `SHA256SUMS` にあります。
+4. キットのシリアルポートを指定して起動します。
+   ```bash
+   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --open --sigfox /dev/ttyACM0     # Linux
+   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --open --sigfox /dev/cu.usbmodem1101   # macOS
+   .\opennek-<version>-windows-x64.exe --open --sigfox COM3       # Windows（PowerShell）
+   ```
+   `--sigfox` を省くと、Web UI でポートを選べます。オプションの一覧は `--help` で表示されます。
 
-<http://127.0.0.1:8085/> を開くと、メッセージ画面にシミュレータの送信フォームが出ます。
+   実行ファイルには署名がありません。Windows で SmartScreen の「Windows によって PC が保護されました」が出たら、
+   **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
+   一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
 
-## 実機で動かす
+<http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
+Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
+UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（ブラウザに保存されます）。
 
-### 1. 用意するもの
+Linux でシリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
 
-- ESP32 の開発ボード 2 台（ESP32 DevKit や ESP32-S3 など。ESP-NOW が使えればなんでも可）
-  - 1 台目: **ゲートウェイ**（PC に USB で挿したまま）
-  - 2 台目: **デバイス**（モバイルバッテリーなどで給電）
+データは `~/.local/share/opennek/` に保存されます（Windows は `%APPDATA%\opennek\`、macOS は `~/Library/Application Support/opennek/`）。
 
-### 2. ファームウェアを書き込む
+### アップリンクの認証
 
-```bash
-cd firmware
-pio run -e gateway -t upload --upload-port /dev/ttyUSB0
-pio run -e device  -t upload --upload-port /dev/ttyUSB1
-```
-
-ESP32-S3 は `gateway-s3` / `device-s3` を使います。PlatformIO を使わない方法（ブラウザからの書き込みなど）は
-[docs/flashing.ja.md](docs/flashing.ja.md) を見てください。
-
-### 3. ホストを起動する
-
-```bash
-cd host && bun run start          # または .deb を入れて: opennek --open
-```
-
-ゲートウェイは自動で見つかります（右上が「接続中 · ch 1」になれば OK）。
-シリアルポートを開く権限がないと言われたら `sudo usermod -aG dialout $USER` を実行し、再ログインしてください。
-
-### 4. デバイスを登録する
-
-デバイスの USB シリアル（115200 bps）で:
+アップリンクは、デバイスが署名に使った鍵でしか検証できません。Sigfox が書き込んだ秘密鍵は通常モジュールから読み出せないので、
+本物のデバイスを検証するときは公開鍵（sigfox-ep-lib が定める `00112233445566778899AABBCCDDEEFF`）に切り替えます。
+AX-SFJK などのモジュールでは次のとおりです。
 
 ```
-AT$ID      → 0A1B2C3D                          (デバイス ID)
-AT$PAC     → 3F2A...（32 桁）                   (デバイス鍵)
-AT$SF=0102030405
-OK
+ATS410=1    → 公開鍵: OpenNEK で検証できる。本番ネットワークでは使えない
+ATS410=0    → 秘密鍵に戻す。本番ネットワークで使う前に必ず戻す
 ```
 
-1 回送るとデバイス一覧に「未登録」として出てきます。**編集** を押して鍵に `AT$PAC` の値を入れると、
-認証が OK になり、ダウンリンクが使えるようになります。
-
----
-
-## デバイス（AT モデムエミュレータ）
-
-USB シリアル（115200 bps）と UART（**GPIO16 = RX、GPIO17 = TX、9600 bps**）の両方でコマンドを受け付けます。
-既存の Sigfox AT 端末の UART をこの ESP32 につなぎ替えると、そのまま送信できます。
-**BOOT ボタン**を押すと、起動してからの秒数（4 バイト）をデモとして送ります。
-
-| コマンド | 応答 | 説明 |
+| デバイス | 表示 | コールバック |
 |---|---|---|
-| `AT` / `ATZ` | `OK` | |
-| `AT$SF=<hex>` | `OK` | 0〜12 バイトを送る |
-| `AT$SF=<hex>,1` | `OK` `RX=01 02 03 04 05 06 07 08` | ダウンリンクを要求する（来なければ `ERROR: downlink timeout`） |
-| `AT$SB=<0\|1>[,1]` | `OK` | 1 ビット送信（1 バイト `00` / `01` として送る） |
-| `AT$SO` | `OK` | OOB（keep-alive）フレーム |
-| `AT$ID` / `AT$I=10` | `0A1B2C3D` | デバイス ID（MAC の下位 4 バイト） |
-| `AT$PAC` / `AT$I=11` | 32 桁 16 進 | デバイス鍵（ホストに登録する） |
-| `AT$CH?` / `AT$CH=<1-13>` | | ESP-NOW のチャンネル（ゲートウェイと揃える） |
-| `AT$KEY=<32 hex>` | `OK` | 鍵を書き換える |
-| `AT$DLW?` / `AT$DLW=<ms>` | | ダウンリンクを待つ時間（既定 8000 ms） |
-| `AT$SEQ?` | | 次に使うシーケンス番号 |
-| `AT$T?` / `AT$V?` | | 温度（0.1 ℃単位）/ 電圧（固定値 3300） |
-| `AT$RC…` `AT$P=…` `AT+MODE…` `ATS3…` | `OK` | 実モデム用の設定コマンド。何もせず受け流す |
+| デバイス画面で鍵を登録済み | OK、または鍵不一致 | OK のときだけ実行 |
+| 公開鍵モード、鍵は未登録 | 公開鍵 | 「鍵が未登録のデバイスもコールバックを実行する」がオンなら実行 |
+| 秘密鍵、未登録 | 未検証 | 「鍵が未登録のデバイスもコールバックを実行する」がオンなら実行 |
 
-自分のスケッチから使うときは、ライブラリ `firmware/lib/OpenNEK` をそのまま使えます:
+公開鍵は誰でも署名に使えるので、フレームに矛盾がないことは分かっても、送信者までは保証しません。
 
-```cpp
-#include <OpenNEK.h>
-onek::Device dev;
-void setup() { dev.begin(); }
-void loop() {
-  uint8_t data[] = {0x12, 0x34}, dl[8];
-  if (dev.send(data, sizeof(data), dl) == onek::SendResult::Ok) { /* dl に 8 バイト */ }
-  delay(60000);
-}
-```
+### ダウンリンク
+
+**設定 → 受信機からダウンリンクを送信する** をオンにすると、ダウンリンクを要求する（`AT$SF=…,1`）認証済みのアップリンクに、
+デバイスの固定データかコールバックの `downlinkData` を返します。デバイス側には `RX=…` が出ます。
+
+- キットはアップリンクのフレーム 1 の周波数を測り、フレーム 1 − 1 MHz（922.1〜922.3 MHz）で、フレーム 1 の終わりから 21 秒後、
+  デバイスの RC3 受信ウィンドウ内に送信します。
+- フレームは GFSK 600 bps です。認証値は登録済みの鍵か公開鍵で計算します。
+- `RX=` の後にデバイスが送る受信確認フレームで、ダウンリンクが「受信確認」になります。
+
+ホストが何を指示しても、ファームウェアは次の範囲を超える送信を拒否します。
+
+| 制限 | 値 |
+|---|---|
+| 送信 | ホストが許可している間だけ。リセットのたびにオフ |
+| 周波数 | 922.1〜922.3 MHz（922.2 MHz の単位チャネル） |
+| 出力 | 10 dBm（10 mW） |
+| キャリアセンス | 毎フレームの前に −80 dBm で 5 ms |
+| 休止 / 1 時間の総送信時間 | 送信の間に 100 ms、1 時間あたり 360 秒 |
+
+> **電波法**: ダウンリンクは 920 MHz 帯で電波を出します。キットが技適の条件（認証を受けたアンテナ・条件の範囲内）を
+> 満たしているときだけオンにしてください。上の制限値は認証の条件と照らし合わせて確認してください。
 
 ## コールバック
 
@@ -129,15 +109,15 @@ void loop() {
 
 - **ペイロード定義**（デバイスごと）: `temp::int:16:little-endian hum::uint:8 door:0:bool:7` のように書くと、
   UI にデコードした値が出て、コールバックでは `{customData#temp}` として使えます。
-- **ダウンリンク**: デバイスの設定を「コールバックのレスポンス」にし、コールバックの
-  「レスポンスからダウンリンクデータを取り出す」にチェックを入れます。レスポンスで
+- **ダウンリンクのデータ**: デバイスの設定を「固定データ」（例: `{time}0102{rssi}`）か「コールバックのレスポンス」にします。
+  後者ではコールバックの「レスポンスからダウンリンクデータを取り出す」にチェックを入れます。レスポンスで
   `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
 - **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（ログには残りません）。
 
 ## WSL2 で使う場合
 
-WSL には USB がそのままでは見えません。Windows 側で [usbipd-win](https://github.com/dorssel/usbipd-win) を使い、
-ゲートウェイを WSL に渡してください（PowerShell を管理者で開いて実行）:
+Windows では上の手順どおり Windows 上で直接動かすのがいちばん簡単です。WSL の中で動かす場合、WSL には USB がそのままでは見えません。Windows 側で [usbipd-win](https://github.com/dorssel/usbipd-win) を使い、
+キットを WSL に渡してください（PowerShell を管理者で開いて実行）:
 
 ```powershell
 usbipd list
@@ -147,31 +127,31 @@ usbipd attach --wsl --busid <BUSID>
 
 Web UI は Windows のブラウザから <http://localhost:8085/> で開けます。
 
-## .deb を作る
-
-```bash
-./packaging/build-deb.sh     # → dist/opennek_0.1.0_amd64.deb
-sudo apt install ./dist/opennek_0.1.0_amd64.deb
-opennek --open               # または: systemctl --user enable --now opennek
-```
-
-ホストは `bun build --compile` で単一バイナリにしてあるので、Bun や Node がなくても動きます。
-ファームの統合イメージは `/usr/share/opennek/firmware/` に入ります。データは `~/.local/share/opennek/` に保存されます。
-
 ## 開発
 
+ソースからホストを動かす場合（[rustup](https://rustup.rs/) が必要です。Rust のバージョンは `rust-toolchain.toml` で決まります）:
+
 ```bash
-(cd host && bun test && bun run typecheck)
-(cd firmware && pio run)
-(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -I ../lib/OpenNEK/src \
-  frame_native_test.cpp ../lib/OpenNEK/src/OpenNekFrame.cpp -o frame_test && ./frame_test)
-(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
-  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)
+cd host
+cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-ホストのテストには、シミュレータを使った E2E テスト（アップリンク → コールバック → ダウンリンク）と、
-socat の仮想シリアルを使ったゲートウェイ通信のテストが含まれます。
-ファームとホストのフレーム実装は、同じゴールデンベクタで一致を確認しています。
+`host/ui` の Web UI はビルド不要の素の JS で、実行ファイルに埋め込まれます。
+`tools/lsm` の LSM100A 用ツールは Node で動きます（`cd tools/lsm && npm install`）。必要なのはファームを扱うときだけです。
+
+main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョンと一致させる）を push すると、
+実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
+
+```bash
+scripts/check     # CI と同じ検査: ホストのフォーマット・lint・テスト、UI の文言、LSM100A ツールのテスト
+(cd host && cargo test)
+(cd firmware && pio run)
+(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
+  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
+```
+
+ホストのテストは、本物の Sigfox デバイスの録音をストリーマの行として流す偽の受信機を使い、
+通しで解読します（アップリンク → コールバック → ダウンリンク）。ファームの C++ 解読器も同じ録音で一致を確認しています。
 
 ## ライセンス
 

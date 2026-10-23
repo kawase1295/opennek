@@ -1,7 +1,7 @@
 {
   "name": "SigfoxRx",
   "version": "0.1.0",
-  "description": "Sigfox uplink decoder for RSSI (envelope) samples, a C++ port of host/src/sigfox. Receive only.",
+  "description": "Sigfox uplink decoder for RSSI (envelope) samples, a C++ port of tools/lsm/sigfox. Receive only.",
   "frameworks": "*",
   "platforms": "*"
 }

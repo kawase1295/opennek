@@ -1,0 +1,26 @@
+{
+  "name": "opennek-lsm-tools",
+  "private": true,
+  "description": "Tools for the LSM100A receiver: flash its firmware through the bridge, record RSSI and CFO, listen to Sigfox",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "flash": "tsx lsm-flash.ts",
+    "rssi-capture": "tsx rssi-capture.ts",
+    "cfo-capture": "tsx cfo-capture.ts",
+    "listen": "tsx sigfox-listen.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "serialport": "^13.0.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

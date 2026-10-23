@@ -1,4 +1,4 @@
-// Envelope (RSSI) demodulator for Sigfox DBPSK uplinks. Port of host/src/sigfox/demod.ts.
+// Envelope (RSSI) demodulator for Sigfox DBPSK uplinks. Port of tools/lsm/sigfox/demod.ts.
 // Pulse-shaped DBPSK makes the amplitude dip towards zero at every phase reversal, so the dips alone give
 // the differentially decoded bits: a dip on a bit boundary means data bit 0, no dip means 1.
 #pragma once
