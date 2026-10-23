@@ -3,10 +3,10 @@ import { z } from 'zod/v4'
 import { parseDownlinkTemplate } from './downlink'
 import { parsePayloadConfig } from './payload'
 
-const hex = (bytes: number) => z.string().regex(new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`), `${bytes} バイトの 16 進`)
+const hex = (bytes: number) => z.string().regex(new RegExp(`^[0-9a-fA-F]{${bytes * 2}}$`), `${bytes} bytes of hex`)
 
 export const DeviceInput = z.object({
-  id: z.string().regex(/^[0-9a-fA-F]{8}$/, '8 桁の 16 進').transform((s) => s.toUpperCase()),
+  id: z.string().regex(/^[0-9a-fA-F]{8}$/, '8 hex digits').transform((s) => s.toUpperCase()),
   name: z.string().max(64).default(''),
   key: z.union([hex(16), z.literal('')]).default('').transform((s) => s.toLowerCase()),
   downlinkMode: z.enum(['none', 'static', 'callback']).default('none'),

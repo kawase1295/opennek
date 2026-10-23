@@ -11,20 +11,20 @@ import { SimGateway } from './gateway/sim'
 import { createApp } from './server'
 import { VERSION } from './version'
 
-const HELP = `OpenNEK ${VERSION} — ESP32 で作るオープンな LPWAN ネットワークエミュレータ
+const HELP = `OpenNEK ${VERSION} — an open LPWAN network emulator built on ESP32
 
-使い方: opennek [オプション]
+Usage: opennek [options]
 
-  --port <n>        Web UI / API のポート (既定 8085)
-  --host <addr>     待ち受けアドレス (既定 127.0.0.1)
-  --serial <path>   ゲートウェイのシリアルポート (既定: 設定値。初期値は auto = 自動検出)
-  --sigfox <path>   本物の Sigfox (RC3) を受ける RSSI ストリーマのポート。off で無効 (既定: 設定値)
-  --sigfox-freq <hz>  Sigfox の受信周波数 (既定 923200000)
-  --sim             ハードウェア無しのシミュレータで起動する
-  --data <dir>      データ保存先 (既定 $XDG_DATA_HOME/opennek)
-  --open            起動後にブラウザで UI を開く
-  -v, --version     バージョンを表示
-  -h, --help        このヘルプ
+  --port <n>          Port of the web UI / API (default 8085)
+  --host <addr>       Address to listen on (default 127.0.0.1)
+  --serial <path>     Serial port of the gateway (default: the saved setting, initially auto = detect)
+  --sigfox <path>     Port of the RSSI streamer that receives real Sigfox (RC3); off to disable (default: the saved setting)
+  --sigfox-freq <hz>  Sigfox receive frequency (default 923200000)
+  --sim               Start with the simulator, no hardware needed
+  --data <dir>        Data directory (default $XDG_DATA_HOME/opennek)
+  --open              Open the UI in a browser after starting
+  -v, --version       Print the version
+  -h, --help          Print this help
 `
 
 const { values: args } = parseArgs({

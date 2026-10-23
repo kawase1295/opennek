@@ -266,7 +266,7 @@ export class SigfoxRadio implements SigfoxTransmitter {
     this.port.write('?')
     this.watchdog = setInterval(() => {
       if (Date.now() - this.lastSample < Math.max(STALL_MS, STATUS_TIMEOUT_MS)) return
-      this.setStatus({ state: 'connecting', error: 'RSSI ストリーマから応答がありません (firmware-lsm100a を書き込み、115200 bps で接続してください)' })
+      this.setStatus({ state: 'connecting', error: 'No reply from the RSSI streamer (flash firmware-lsm100a and connect at 115200 bps)' })
       try {
         this.port?.write('?')
       } catch (e) {
@@ -279,7 +279,7 @@ export class SigfoxRadio implements SigfoxTransmitter {
     if (!this.port) return
     this.log(`sigfox: ${e instanceof Error ? e.message : String(e)}`)
     this.close()
-    this.setStatus({ state: 'disconnected', error: '受信機との接続が切れました' })
+    this.setStatus({ state: 'disconnected', error: 'Lost the connection to the receiver' })
     this.scheduleRetry()
   }
 

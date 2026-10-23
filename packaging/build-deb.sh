@@ -35,7 +35,8 @@ fi
 install -Dm644 /dev/stdin "$STAGE/usr/share/applications/opennek.desktop" <<DESKTOP
 [Desktop Entry]
 Name=OpenNEK
-Comment=ESP32 で作るオープンな LPWAN ネットワークエミュレータ
+Comment=Open LPWAN network emulator built on ESP32
+Comment[ja]=ESP32 で作るオープンな LPWAN ネットワークエミュレータ
 Exec=opennek --open
 Terminal=true
 Type=Application
