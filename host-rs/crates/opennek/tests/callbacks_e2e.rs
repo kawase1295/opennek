@@ -182,6 +182,7 @@ fn uplink(key: &[u8; 16], counter: u16, downlink: bool) -> RadioEvent {
         },
         received_at: opennek::radio::now_ms(),
         first_frame_end_at: None,
+        uplink_freq_hz: None,
     })
 }
 

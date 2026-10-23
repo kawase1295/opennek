@@ -13,6 +13,7 @@ fn radio(streamer: &FakeStreamer, port: &str) -> (Radio, Arc<Mutex<Vec<RadioEven
         Box::new(move || RadioSettings {
             port: port.clone(),
             freq: 923_200_000,
+            follow: false,
         }),
         Box::new(streamer.clone()),
         Box::new(move |e| sink.lock().unwrap().push(e)),
