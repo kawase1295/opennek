@@ -181,9 +181,9 @@ if (isMain(import.meta.url)) {
     console.error(`${file} does not look like an LSM100A application image (sp=0x${sp.toString(16)} reset=0x${reset.toString(16)}); it must be linked at 0x08002000`)
     process.exit(1)
   }
-  const port = openPort(path, 115200)
+  const port = await openPort(path, 115200)
   try {
-    await enterBootloader(port, isBridge(path))
+    await enterBootloader(port, await isBridge(path))
     console.log(`Sending ${basename(file)} (${image.length} bytes)`)
     // The SJI bootloader only sends 'C' sporadically while idle, so start with the header right away
     await ymodemSend(port, basename(file), image, (sent) => process.stdout.write(`\r  ${Math.round((sent / image.length) * 100)}%`), true)

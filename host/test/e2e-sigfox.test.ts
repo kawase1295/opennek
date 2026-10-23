@@ -46,7 +46,9 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
 
   for (const line of streamerLines(live)) radio.handleLine(line)
   radio.flush()
-  for (let i = 0; i < 100 && hits.length < 3; i++) await settle(20)
+  // The downlink status of the last message is settled after its callbacks have answered
+  const settled = () => hits.length >= 3 && store.listMessages().every((m) => m.downlinkStatus !== 'pending')
+  for (let i = 0; i < 100 && !settled(); i++) await settle(20)
   server.close()
 
   const messages = store.listMessages().reverse()

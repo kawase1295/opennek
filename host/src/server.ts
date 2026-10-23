@@ -52,7 +52,7 @@ export function createApp(engine: Engine) {
     if (r.data.sigfoxPort !== before.sigfoxPort || r.data.sigfoxFreq !== before.sigfoxFreq) sigfox?.reconnect()
     return c.json(r.data)
   })
-  api.get('/serial/ports', (c) => c.json(listSerialPorts()))
+  api.get('/serial/ports', async (c) => c.json(await listSerialPorts()))
 
   // --- devices
   api.get('/devices', (c) => c.json(store.listDevices()))

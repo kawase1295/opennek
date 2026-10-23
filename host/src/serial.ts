@@ -1,50 +1,51 @@
-import { spawnSync } from 'node:child_process'
-import { constants, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
-import { ReadStream as TtyReadStream } from 'node:tty'
+import { basename } from 'node:path'
+import { SerialPort } from 'serialport'
 
-// Linux のシリアルポートを stty で raw 115200 にして直接読み書きする (ネイティブアドオン不要)
 const BAUD = 115200
 
 export type SerialPortInfo = { path: string; label: string }
 
-export function listSerialPorts(): SerialPortInfo[] {
-  const ports: SerialPortInfo[] = []
-  const seen = new Set<string>()
-  const byId = '/dev/serial/by-id'
-  if (existsSync(byId)) {
-    for (const name of readdirSync(byId).sort()) {
-      try {
-        const path = realpathSync(`${byId}/${name}`)
-        seen.add(path)
-        ports.push({ path, label: name })
-      } catch {}
-    }
-  }
-  for (const name of readdirSync('/dev').sort()) {
-    if (!/^tty(ACM|USB)\d+$/.test(name)) continue
-    const path = `/dev/${name}`
-    if (!seen.has(path)) ports.push({ path, label: name })
+type ListedPort = Awaited<ReturnType<typeof SerialPort.list>>[number] & { friendlyName?: string }
+
+const byPath = (a: SerialPortInfo, b: SerialPortInfo) => a.path.localeCompare(b.path, 'en', { numeric: true })
+
+// SerialPort.list() の結果を OS ごとに選ぶ。Linux は内蔵の ttyS*、macOS は Bluetooth などの USB でないポートを外す
+export function toPortList(ports: ListedPort[], platform: NodeJS.Platform): SerialPortInfo[] {
+  const named = (p: ListedPort) => [p.manufacturer, p.serialNumber].filter(Boolean).join(' ')
+  if (platform === 'win32') return ports.map((p) => ({ path: p.path, label: p.friendlyName || named(p) || p.path })).sort(byPath)
+  if (platform === 'darwin') {
+    return ports
+      .filter((p) => p.vendorId)
+      // cu は相手の DCD を待たずに開ける発信用のノード
+      .map((p) => ({ path: p.path.replace(/^\/dev\/tty\./, '/dev/cu.'), label: named(p) || basename(p.path) }))
+      .sort(byPath)
   }
   return ports
+    .filter((p) => p.vendorId || /\/tty(ACM|USB)\d+$/.test(p.path))
+    .map((p) => ({ path: p.path, label: p.pnpId || named(p) || basename(p.path) }))
+    .sort(byPath)
 }
+
+export const listSerialPorts = async () => toPortList(await SerialPort.list(), process.platform)
 
 export type LinePort = { write(line: string): void; close(): Promise<void> }
 
-// raw 115200 にしたポートを行単位で読む。stty や open の失敗は例外 (権限不足ならヒント付き)
-export function openLinePort(port: string, onLine: (line: string) => void, onError: (e: unknown) => void): LinePort {
-  const stty = spawnSync('stty', ['-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { encoding: 'utf8' })
-  if (stty.status !== 0) {
-    const err = (stty.stderr || stty.error?.message || '').trim()
-    const hint = /permission denied/i.test(err) ? ' — run `sudo usermod -aG dialout $USER` and log in again' : ''
-    throw new Error(`${err}${hint}`)
-  }
-  const fd = openSync(port, constants.O_RDWR | constants.O_NOCTTY)
-  let buf = ''
-  // fd はストリームに持たせ、destroy で一緒に閉じる
-  const stream = new TtyReadStream(fd)
-  stream.setEncoding('utf8')
+// 115200 8N1 で開いて行単位で読む。開けなければ例外 (Linux で権限不足ならヒント付き)
+export async function openLinePort(path: string, onLine: (line: string) => void, onError: (e: unknown) => void): Promise<LinePort> {
+  const port = new SerialPort({ path, baudRate: BAUD, autoOpen: false })
+  await new Promise<void>((resolve, reject) =>
+    port.open((e) => {
+      if (!e) return resolve()
+      const hint = process.platform === 'linux' && /permission denied/i.test(e.message) ? ' — run `sudo usermod -aG dialout $USER` and log in again' : ''
+      reject(new Error(`${e.message}${hint}`))
+    }),
+  )
   let open = true
-  stream.on('data', (chunk) => {
+  let buf = ''
+  port.setEncoding('utf8')
+  port.on('data', (chunk: string) => {
+    // close は非同期なので、閉じると決めた後に届いた分は捨てる
+    if (!open) return
     buf += chunk
     let i: number
     while ((i = buf.indexOf('\n')) >= 0) {
@@ -53,20 +54,17 @@ export function openLinePort(port: string, onLine: (line: string) => void, onErr
     }
     if (buf.length > 4096) buf = ''
   })
-  stream.on('error', (e) => open && onError(e))
-  stream.on('end', () => open && onError(new Error('port closed')))
+  port.on('error', (e) => open && onError(e))
+  // 抜かれたときは error ではなく close (disconnected) で知らされる
+  port.on('close', () => open && onError(new Error('port closed')))
   return {
     write(line) {
-      if (open) writeSync(fd, `${line}\n`)
+      if (open) port.write(`${line}\n`)
     },
-    // fd が実際に閉じるまで待てるようにする (fd 番号の再利用で別のファイルを閉じないように)
     close() {
       if (!open) return Promise.resolve()
       open = false
-      return new Promise((resolve) => {
-        stream.once('close', () => resolve())
-        stream.destroy()
-      })
+      return new Promise((resolve) => (port.isOpen ? port.close(() => resolve()) : resolve()))
     },
   }
 }

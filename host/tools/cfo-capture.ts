@@ -41,7 +41,7 @@ if (isMain(import.meta.url)) {
   }
   const bw = Number(args.bw)
   const step = cfoStepHz(bw)
-  const port = openPort(path, 115200)
+  const port = await openPort(path, 115200)
   const raw: number[] = []
   const cfo = new Map<number, number[]>() // R/C line seq -> raw CFO values
   const rssiSeq: number[] = [] // seq of each R line, in order

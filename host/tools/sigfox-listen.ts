@@ -40,7 +40,7 @@ const start = (sampleRate: number) => {
   )
 }
 
-const port = openPort(path, 115200)
+const port = await openPort(path, 115200)
 port.onLine((line) => {
   if (line.startsWith('I ')) {
     const sr = Number(/sr=(\d+)/.exec(line)?.[1] ?? 2000)

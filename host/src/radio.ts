@@ -59,6 +59,8 @@ const atLeast = (fw: string | undefined, min: number[]) => {
 export class SigfoxRadio implements SigfoxTransmitter {
   private st: RadioStatus = { state: 'off', port: null, frames: 0, badFrames: 0, lostLines: 0 }
   private port: LinePort | null = null
+  // Bumped by every close and connect, so an open that finishes after them is dropped
+  private generation = 0
   private closing: Promise<void> = Promise.resolve()
   private stopped = true
   private retry: NodeJS.Timeout | null = null
@@ -253,12 +255,17 @@ export class SigfoxRadio implements SigfoxTransmitter {
     const { port: path, freq } = this.settings()
     if (!path) return this.setStatus({ state: 'off', port: null, error: undefined })
     this.setStatus({ state: 'connecting', port: path, error: undefined })
+    const generation = ++this.generation
+    let port: LinePort
     try {
-      this.port = openLinePort(path, (line) => this.handleLine(line), (e) => this.fail(e))
+      port = await openLinePort(path, (line) => this.handleLine(line), (e) => this.fail(e))
     } catch (e) {
+      if (generation !== this.generation) return
       this.setStatus({ state: 'disconnected', error: e instanceof Error ? e.message : String(e) })
       return this.scheduleRetry()
     }
+    if (generation !== this.generation || this.stopped) return void port.close()
+    this.port = port
     this.log(`sigfox: opened ${path}`)
     this.lastSeq = -1
     this.lastSample = Date.now()
@@ -285,6 +292,7 @@ export class SigfoxRadio implements SigfoxTransmitter {
   }
 
   private close() {
+    this.generation++
     if (this.watchdog) clearInterval(this.watchdog)
     this.watchdog = null
     this.rx?.flush()

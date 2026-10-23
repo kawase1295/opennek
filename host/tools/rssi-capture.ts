@@ -52,7 +52,7 @@ if (isMain(import.meta.url)) {
     console.error('usage: npx tsx tools/rssi-capture.ts <serial port> [--freq hz] [--bw code] [--rate hz] [--boost 0|1] [--out name]')
     process.exit(2)
   }
-  const port = openPort(path, 115200)
+  const port = await openPort(path, 115200)
   const raw: number[] = []
   let status = ''
   let rate = Number(args.rate ?? 2000)
