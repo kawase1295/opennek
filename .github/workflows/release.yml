@@ -1,0 +1,30 @@
+name: release
+# Publishes host/ to npm when a version tag (v0.2.0) is pushed on main.
+# Needs the NPM_TOKEN repository secret (an npm automation token).
+on:
+  push:
+    tags: ['v*']
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag is on main and matches the package version
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          test "v$(node -p "require('./host/package.json').version")" = "$GITHUB_REF_NAME"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: sudo apt-get install -y socat
+      - run: scripts/check
+      - run: npm publish --provenance --access public
+        working-directory: host
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
