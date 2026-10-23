@@ -23,3 +23,32 @@ fn rejects_an_unknown_argument() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
+
+mod options {
+    use clap::Parser;
+    use opennek::cli::Args;
+
+    fn parse(args: &[&str]) -> Args {
+        Args::try_parse_from(std::iter::once("opennek").chain(args.iter().copied())).unwrap()
+    }
+
+    #[test]
+    fn the_browser_opens_unless_told_not_to() {
+        assert!(parse(&[]).opens_browser());
+        assert!(!parse(&["--no-open"]).opens_browser());
+    }
+
+    #[test]
+    fn open_is_still_accepted() {
+        assert!(parse(&["--open"]).opens_browser());
+    }
+
+    #[test]
+    fn defaults() {
+        let a = parse(&[]);
+        assert_eq!(
+            (a.port, a.host.as_str(), a.sigfox.as_deref(), a.data.is_none()),
+            (8085, "127.0.0.1", None, true)
+        );
+    }
+}

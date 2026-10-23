@@ -37,15 +37,16 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    or `opennek-<version>-macos-x64` (Intel Mac). `SHA256SUMS` lists their checksums.
 4. Start it with the kit's serial port:
    ```bash
-   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --open --sigfox /dev/ttyACM0     # Linux
-   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --open --sigfox /dev/cu.usbmodem1101   # macOS
-   .\opennek-<version>-windows-x64.exe --open --sigfox COM3       # Windows (PowerShell)
+   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
+   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
+   .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows (PowerShell)
    ```
-   Without `--sigfox`, pick the port in the web UI. `--help` lists all options.
+   The web UI opens in your browser (`--no-open` to skip that). Without `--sigfox`, pick the port in the web UI.
+   `--help` lists all options. On Windows, double-clicking the `.exe` starts it too.
 
-   OpenNEK is started from a terminal opened in the download folder (on Linux, right-click the folder → **Open in
-   Terminal**). Double-clicking it in the file manager does not start it: on Linux, Files says "There is no app
-   installed for executable files".
+   On Linux and macOS, start it from a terminal opened in the download folder (on Linux, right-click the folder →
+   **Open in Terminal**). Double-clicking it in the file manager does not start it: on Linux, Files says "There is no
+   app installed for executable files".
 
    The binaries are not signed. On Windows, SmartScreen may say "Windows protected your PC": choose
    **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run

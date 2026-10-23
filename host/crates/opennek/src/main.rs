@@ -2,41 +2,14 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use clap::{ArgAction, Parser};
+use clap::Parser;
+use opennek::cli::Args;
 use opennek::engine::Event;
 use opennek::host::Host;
 use opennek::platform::{Os, browser_command, default_data_dir};
 use opennek::serial::SerialOpener;
 use opennek::store::{DownlinkStatus, Store};
 use serde_json::json;
-
-/// OpenNEK — a local network for real Sigfox devices
-#[derive(Parser)]
-#[command(name = "opennek", version, disable_version_flag = true)]
-struct Args {
-    /// Port of the web UI / API
-    #[arg(long, default_value_t = 8085)]
-    port: u16,
-    /// Address to listen on
-    #[arg(long, default_value = "127.0.0.1")]
-    host: String,
-    /// Port of the RSSI streamer that receives real Sigfox (RC3); off to disable [default: the saved setting]
-    #[arg(long, value_name = "PATH")]
-    sigfox: Option<String>,
-    /// Sigfox receive frequency in Hz [default: 923200000]
-    #[arg(long, value_name = "HZ")]
-    sigfox_freq: Option<u32>,
-    /// Data directory [default: $XDG_DATA_HOME/opennek, %APPDATA%\opennek on Windows, ~/Library/Application
-    /// Support/opennek on macOS]
-    #[arg(long, value_name = "DIR")]
-    data: Option<PathBuf>,
-    /// Open the UI in a browser after starting
-    #[arg(long)]
-    open: bool,
-    /// Print the version
-    #[arg(short = 'v', long, action = ArgAction::Version)]
-    version: (),
-}
 
 fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
@@ -148,7 +121,7 @@ async fn main() -> ExitCode {
     };
     let url = format!("http://{shown}:{}/", args.port);
     println!("OpenNEK {} — {url}  data: {}", env!("CARGO_PKG_VERSION"), dir.display());
-    if args.open {
+    if args.opens_browser() {
         let (cmd, cmd_args) = browser_command(Os::current(), &url);
         // a missing browser is not worth failing over; the URL is printed above
         let _ = std::process::Command::new(cmd).args(cmd_args).spawn();
