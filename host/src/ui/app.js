@@ -29,7 +29,7 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500)
 }
 
-const state = { devices: [], callbacks: [], messages: new Map(), gateway: null, radio: null, settings: null }
+const state = { devices: [], callbacks: [], messages: new Map(), radio: null, settings: null }
 
 // ---------------- tabs
 function showTab(name) {
@@ -41,39 +41,14 @@ function showTab(name) {
 }
 $$('nav button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)))
 
-// ---------------- gateway
-function renderGateway(g) {
-  state.gateway = g
-  const pill = $('#gw')
-  pill.className = `pill ${g.state}`
-  const label = t(`gw.${g.state}`)
-  pill.textContent = g.kind === 'sim' ? `${t('gw.sim')} · ch ${g.channel ?? '-'}` : g.state === 'connected' ? `${label} · ch ${g.channel}` : label
-  pill.title = g.error || g.port || ''
-  $('#sim').classList.toggle('hidden', g.kind !== 'sim')
-  $('#gw-detail').innerHTML = [
-    [t('kv.state'), `${label}${g.error ? ` — ${esc(g.error)}` : ''}`],
-    [t('kv.kind'), g.kind === 'sim' ? t('gw.sim') : t('gw.serial')],
-    [t('kv.port'), esc(g.port ?? '—')],
-    [t('kv.firmware'), esc(g.fw ?? '—')],
-    [t('kv.radio'), esc(g.radio ?? '—')],
-    [t('kv.channel'), esc(g.channel ?? '—')],
-    ['MAC', esc(g.mac ?? '—')],
-  ]
-    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
-    .join('')
-}
-
 // ---------------- Sigfox receiver
 function renderRadio(r) {
   state.radio = r
   const pill = $('#radio')
-  pill.classList.toggle('hidden', !r || r.state === 'off')
   const label = t(`radio.${r?.state ?? 'off'}`)
-  if (r && r.state !== 'off') {
-    pill.className = `pill ${r.state}`
-    pill.textContent = `Sigfox · ${r.state === 'connected' && r.freq ? `${(r.freq / 1e6).toFixed(1)} MHz` : label}`
-    pill.title = r.error || r.port || ''
-  }
+  pill.className = `pill ${r?.state === 'off' ? 'disconnected' : (r?.state ?? 'disconnected')}`
+  pill.textContent = `Sigfox · ${r?.state === 'connected' && r.freq ? `${(r.freq / 1e6).toFixed(1)} MHz` : label}`
+  pill.title = r?.error || r?.port || ''
   $('#radio-detail').innerHTML = (
     r && r.state !== 'off'
       ? [
@@ -103,14 +78,9 @@ const DL_BADGE = {
   nodata: `<span class="badge muted">${t('dl.nodata')}</span>`,
   unsupported: `<span class="badge muted">${t('dl.unsupported')}</span>`,
 }
-const RADIO_BADGE = {
-  espnow: '<span class="badge muted">ESP-NOW</span>',
-  sigfox: '<span class="badge sigfox">Sigfox</span>',
-}
 const AUTH_BADGE = {
   ok: '<span class="badge ok">OK</span>',
   bad: `<span class="badge bad">${t('auth.bad')}</span>`,
-  unknown: `<span class="badge muted">${t('auth.unknown')}</span>`,
   public: `<span class="badge muted">${t('auth.public')}</span>`,
   unverified: `<span class="badge muted">${t('auth.unverified')}</span>`,
 }
@@ -129,7 +99,7 @@ function messageRow(m) {
       )}</span>`
     : ''
   const dl = m.ack ? `${DL_BADGE[m.downlinkStatus] ?? ''} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : m.oob ? '<span class="badge muted">OOB</span>' : ''
-  return `<td>${fmtTime(m.time)}</td><td>${RADIO_BADGE[m.radio] ?? ''}</td><td>${deviceLabel(m.deviceId)}</td><td>${m.seq}</td>
+  return `<td>${fmtTime(m.time)}</td><td>${deviceLabel(m.deviceId)}</td><td>${m.seq}</td>
     <td class="data">${spaced(m.data)}${decoded}</td><td>${m.rssi} dBm</td><td>${m.nbFrames}/3</td>
     <td>${AUTH_BADGE[m.auth]}</td><td>${dl}</td>`
 }
@@ -184,8 +154,6 @@ msgBody.addEventListener('click', async (e) => {
     ['ID', m.id],
     [t('kv.time'), fmtTime(m.time)],
     [t('kv.device'), deviceLabel(m.deviceId)],
-    [t('kv.radio'), RADIO_BADGE[m.radio] ?? esc(m.radio)],
-    m.radio === 'sigfox' ? [t('kv.receivedBy'), t('kv.receivedBySigfox')] : [t('kv.srcMac'), esc(m.src)],
     ['Seq', m.seq],
     [t('kv.data'), `<code>${spaced(m.data)}</code>`],
     [t('kv.decoded'), m.decoded ? `<code>${esc(JSON.stringify(m.decoded))}</code>` : '—'],
@@ -209,24 +177,6 @@ function logBlock(l) {
     <span class="muted">${l.durationMs} ms</span>${l.error && l.status ? ` <span class="muted">${esc(l.error)}</span>` : ''}
     ${l.response ? `<pre>${esc(l.response)}</pre>` : ''}</div>`
 }
-
-// ---------------- simulator
-$('#sim-form').addEventListener('submit', async (e) => {
-  e.preventDefault()
-  const f = e.target
-  const btn = $('button', f)
-  btn.disabled = true
-  $('#sim-result').textContent = f.ack.checked ? t('sim.waiting') : ''
-  try {
-    const r = await api('/sim/uplink', { method: 'POST', body: { deviceId: f.deviceId.value, data: f.data.value, ack: f.ack.checked } })
-    $('#sim-result').textContent = `${t('sim.sent', { seq: r.seq })}${f.ack.checked ? t('sim.downlink', { data: r.downlink ? spaced(r.downlink) : t('sim.noDownlink') }) : ''}`
-    loadDevices()
-  } catch (err) {
-    $('#sim-result').textContent = err.message
-  } finally {
-    btn.disabled = false
-  }
-})
 
 // ---------------- devices
 async function loadDevices() {
@@ -428,19 +378,12 @@ async function loadSettings() {
   const [s, ports] = await Promise.all([api('/settings'), api('/serial/ports')])
   state.settings = s
   const f = $('#settings-form')
-  const opts = [{ path: 'auto', label: t('set.autoDetect') }, ...ports]
-  if (!opts.some((p) => p.path === s.serialPort)) opts.push({ path: s.serialPort, label: s.serialPort })
-  f.serialPort.innerHTML = opts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path !== 'auto' && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
-  f.serialPort.value = s.serialPort
-  f.serialPort.disabled = state.gateway?.kind === 'sim'
   const sfOpts = [{ path: '', label: t('set.notUsed') }, ...ports]
   if (!sfOpts.some((p) => p.path === s.sigfoxPort)) sfOpts.push({ path: s.sigfoxPort, label: s.sigfoxPort })
   f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && p.label !== p.path ? ` (${esc(p.path)})` : ''}</option>`).join('')
   f.sigfoxPort.value = s.sigfoxPort
   f.sigfoxFreq.value = s.sigfoxFreq
   f.sigfoxDownlink.checked = s.sigfoxDownlink
-  f.channel.value = s.channel
-  f.dedupWindowMs.value = s.dedupWindowMs
   f.downlinkTimeoutMs.value = s.downlinkTimeoutMs
   f.acceptUnknownDevices.checked = s.acceptUnknownDevices
 }
@@ -451,9 +394,6 @@ $('#settings-form').addEventListener('submit', async (e) => {
     await api('/settings', {
       method: 'PUT',
       body: {
-        serialPort: f.serialPort.value,
-        channel: Number(f.channel.value),
-        dedupWindowMs: Number(f.dedupWindowMs.value),
         downlinkTimeoutMs: Number(f.downlinkTimeoutMs.value),
         acceptUnknownDevices: f.acceptUnknownDevices.checked,
         sigfoxPort: f.sigfoxPort.value,
@@ -470,10 +410,6 @@ $('#settings-form').addEventListener('submit', async (e) => {
 // ---------------- live events
 function connectEvents() {
   const es = new EventSource('/api/events')
-  es.addEventListener('gateway', (e) => {
-    const data = JSON.parse(e.data)
-    renderGateway(data.status ?? data)
-  })
   es.addEventListener('radio', (e) => renderRadio(JSON.parse(e.data).status))
   es.addEventListener('message', (e) => {
     const { message } = JSON.parse(e.data)
@@ -483,7 +419,7 @@ function connectEvents() {
   es.addEventListener('callbackLog', () => {
     if ($('#tab-callbacks').classList.contains('active')) loadLogs()
   })
-  es.onerror = () => renderGateway({ state: 'disconnected', kind: state.gateway?.kind ?? 'serial', port: null, error: t('gw.hostDown') })
+  es.onerror = () => renderRadio({ state: 'disconnected', port: null, error: t('radio.hostDown') })
 }
 
 // ---------------- language
@@ -502,7 +438,6 @@ langSel.addEventListener('change', () => {
 translatePage()
 ;(async () => {
   const status = await api('/status')
-  renderGateway(status.gateway)
   renderRadio(status.radio)
   await Promise.all([loadDevices(), loadCallbacks()])
   await loadMessages()

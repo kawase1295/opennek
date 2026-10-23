@@ -6,7 +6,6 @@
   "scripts": {
     "start": "bun src/index.ts --open",
     "dev": "bun --watch src/index.ts",
-    "sim": "bun src/index.ts --sim",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --compile --minify --outfile dist/opennek"

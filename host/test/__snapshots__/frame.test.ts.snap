@@ -1,3 +1,0 @@
-// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
-
-exports[`frame layout matches docs/protocol.md (golden vector shared with firmware) 1`] = `"4e4b0102003d2c1b0a230108010203040506070892cafeba"`;

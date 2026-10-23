@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test'
 import { Store } from '../src/db'
 import { Engine } from '../src/engine'
-import { SimGateway } from '../src/gateway/sim'
 import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'
 import { decodeControl, decodeUplinkBits, encodeUplink } from '../src/sigfox/frame'
 
@@ -46,7 +45,7 @@ test('control payloads', () => {
 
 test('a downlink confirmation is stored as OOB and marks the downlink as received', () => {
   const store = new Store(':memory:')
-  const engine = new Engine(store, new SimGateway())
+  const engine = new Engine(store)
   const message = (counter: number, payload: Uint8Array, control: boolean) => {
     const f = { deviceId: '00763DA3', counter, payload, bit: null, downlink: false }
     return {
@@ -58,7 +57,7 @@ test('a downlink confirmation is stored as OOB and marks the downlink as receive
   for (const seq of [2030, 2029]) {
     const m = store.insertMessage({
       deviceId: '00763DA3', time: 0, seq, data: '61', ack: true, oob: false, rssi: -75, nbFrames: 3, auth: 'public',
-      src: 'sigfox', station: '0000', radio: 'sigfox', decoded: null, downlink: '0102030405060708', downlinkStatus: 'pending',
+      station: '0000', decoded: null, downlink: '0102030405060708', downlinkStatus: 'pending',
     })
     store.updateMessage(m.id, { downlinkStatus: 'sent' })
   }

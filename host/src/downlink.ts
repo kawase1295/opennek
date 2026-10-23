@@ -14,7 +14,7 @@ export type DownlinkPart = { hex: string } | { variable: Variable }
 
 const u32 = (n: number) => (n >>> 0).toString(16).padStart(8, '0')
 const i16 = (n: number) => (Math.max(-0x8000, Math.min(0x7fff, Math.round(n))) & 0xffff).toString(16).padStart(4, '0')
-// station は 16 進の文字列 (Sigfox は '0000'、ESP-NOW はゲートウェイ MAC の下位 4 バイト)。読めなければ 0
+// station は 16 進の文字列 (受信機では '0000')。読めなければ 0
 const stationId = (s: string) => (/^[0-9a-fA-F]{1,8}$/.test(s) ? parseInt(s, 16) : 0)
 
 export function parseDownlinkTemplate(template: string): DownlinkPart[] {

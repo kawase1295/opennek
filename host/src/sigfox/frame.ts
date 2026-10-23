@@ -92,7 +92,7 @@ export function uplinkHeader(opts: { deviceId: string; counter: number; payload:
   return { bytes: out, cls, authSize: cls >= 2 ? li + 2 : 2 }
 }
 
-// Builds the data bits of an uplink frame (used by tests and the simulator)
+// Builds the data bits of an uplink frame (used by tests)
 export function encodeUplink(opts: {
   rank: number
   deviceId: string

@@ -52,9 +52,6 @@ export type CallbackInput = z.infer<typeof CallbackInput>
 export type Callback = CallbackInput & { id: number }
 
 export const Settings = z.object({
-  channel: z.number().int().min(1).max(13).default(1),
-  serialPort: z.string().default('auto'),
-  dedupWindowMs: z.number().int().min(50).max(5000).default(400),
   downlinkTimeoutMs: z.number().int().min(500).max(30000).default(5000),
   acceptUnknownDevices: z.boolean().default(true), // 未登録デバイスのメッセージも表示・コールバックする
   sigfoxPort: z.string().default(''), // 本物の Sigfox を受ける RSSI ストリーマのポート。空なら使わない
@@ -65,9 +62,8 @@ export type Settings = z.infer<typeof Settings>
 
 // acked: the device confirmed it with a control message (real Sigfox)
 export type DownlinkStatus = 'none' | 'pending' | 'sent' | 'acked' | 'failed' | 'nodata' | 'unsupported'
-export type Radio = 'espnow' | 'sigfox'
-// public: 公開鍵で検証できた本物の Sigfox。unverified: 本物の Sigfox で鍵が分からない
-export type Auth = 'ok' | 'bad' | 'unknown' | 'public' | 'unverified'
+// public: 公開鍵で検証できた。unverified: 鍵が分からない
+export type Auth = 'ok' | 'bad' | 'public' | 'unverified'
 
 export type Message = {
   id: number
@@ -80,9 +76,7 @@ export type Message = {
   rssi: number
   nbFrames: number
   auth: Auth
-  src: string
   station: string
-  radio: Radio // ESP-NOW (OpenNEK devices) or real Sigfox received over the air
   decoded: Record<string, unknown> | null
   downlink: string | null
   downlinkStatus: DownlinkStatus
@@ -109,8 +103,8 @@ CREATE TABLE IF NOT EXISTS devices (
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL,
   data TEXT NOT NULL, ack INTEGER NOT NULL, oob INTEGER NOT NULL, rssi INTEGER NOT NULL, nb_frames INTEGER NOT NULL,
-  auth TEXT NOT NULL, src TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
-  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none', radio TEXT NOT NULL DEFAULT 'espnow'
+  auth TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
+  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none'
 );
 CREATE INDEX IF NOT EXISTS messages_device ON messages (device_id, id);
 CREATE TABLE IF NOT EXISTS callbacks (
@@ -151,9 +145,7 @@ const toMessage = (r: Row): Message => ({
   rssi: r.rssi,
   nbFrames: r.nb_frames,
   auth: r.auth,
-  src: r.src,
   station: r.station,
-  radio: r.radio,
   decoded: r.decoded ? JSON.parse(r.decoded) : null,
   downlink: r.downlink,
   downlinkStatus: r.downlink_status,
@@ -178,9 +170,18 @@ export class Store {
     this.db = new Database(path, { create: true, strict: true })
     this.db.run('PRAGMA journal_mode = WAL')
     this.db.run(SCHEMA)
-    // 0.1.0 の DB には radio 列が無い
+    // DBs from before the ESP-NOW network was removed (#19) mark each message with the radio it came in on.
+    // Messages of the ESP-NOW devices cannot be told apart from Sigfox ones without that column, so drop them first
     const cols = this.db.query('PRAGMA table_info(messages)').all() as Row[]
-    if (!cols.some((c) => c.name === 'radio')) this.db.run("ALTER TABLE messages ADD COLUMN radio TEXT NOT NULL DEFAULT 'espnow'")
+    if (cols.some((c) => c.name === 'radio')) {
+      this.db.transaction(() => {
+        this.db.run("DELETE FROM callback_logs WHERE message_id IN (SELECT id FROM messages WHERE radio != 'sigfox')")
+        this.db.run("DELETE FROM messages WHERE radio != 'sigfox'")
+        this.db.run('ALTER TABLE messages DROP COLUMN radio')
+      })()
+    }
+    // src was the MAC address of the ESP-NOW device, where its downlinks went
+    if (cols.some((c) => c.name === 'src')) this.db.run('ALTER TABLE messages DROP COLUMN src')
   }
 
   // --- settings
@@ -221,12 +222,12 @@ export class Store {
   insertMessage(m: Omit<Message, 'id'>): Message {
     const r = this.db
       .query(
-        `INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, src, station, decoded, downlink, downlink_status, radio)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+        `INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, station, decoded, downlink, downlink_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
       .get(
         m.deviceId, m.time, m.seq, m.data, m.ack ? 1 : 0, m.oob ? 1 : 0, m.rssi, m.nbFrames, m.auth,
-        m.src, m.station, m.decoded ? JSON.stringify(m.decoded) : null, m.downlink, m.downlinkStatus, m.radio,
+        m.station, m.decoded ? JSON.stringify(m.decoded) : null, m.downlink, m.downlinkStatus,
       ) as Row
     this.db.query('DELETE FROM messages WHERE id <= ?').run(r.id - MAX_MESSAGES)
     return toMessage(r)
