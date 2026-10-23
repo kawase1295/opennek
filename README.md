@@ -30,14 +30,21 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. Start the host with the kit's serial port. It needs [Node.js](https://nodejs.org/) 22.13 or later and runs on
-   Linux, Windows and macOS:
+3. Download the host for your OS from [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest).
+   It is a single executable with nothing else to install:
+   `opennek-<version>-linux-x64`, `opennek-<version>-windows-x64.exe`, `opennek-<version>-macos-arm64` (Apple silicon)
+   or `opennek-<version>-macos-x64` (Intel Mac). `SHA256SUMS` lists their checksums.
+4. Start it with the kit's serial port:
    ```bash
-   npx opennek --open --sigfox /dev/ttyACM0      # Linux
-   npx opennek --open --sigfox COM3              # Windows
-   npx opennek --open --sigfox /dev/cu.usbmodem1101   # macOS
+   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --open --sigfox /dev/ttyACM0     # Linux
+   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --open --sigfox /dev/cu.usbmodem1101   # macOS
+   .\opennek-<version>-windows-x64.exe --open --sigfox COM3       # Windows (PowerShell)
    ```
-   `npm install -g opennek` installs the `opennek` command instead. Without `--sigfox`, pick the port in the web UI.
+   Without `--sigfox`, pick the port in the web UI. `--help` lists all options.
+
+   The binaries are not signed. On Windows, SmartScreen may say "Windows protected your PC": choose
+   **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
+   `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.
 
 Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
 **Settings → Sigfox receiver (RC3)**. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
@@ -123,14 +130,18 @@ The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 
 ## Development
 
-Run the host from source:
+Run the host from source (needs [rustup](https://rustup.rs/); `rust-toolchain.toml` picks the Rust version):
 
 ```bash
-cd host
-npm install
-npm run build
-npm start -- --sigfox /dev/ttyACM0     # or `npm run dev` to restart on changes
+cd host-rs
+cargo run --release -- --sigfox /dev/ttyACM0
 ```
+
+The TypeScript host in `host/` is being replaced by the Rust one and still runs with
+`cd host && npm install && npm run build && npm start -- --sigfox /dev/ttyACM0`.
+
+Pushing a version tag (`v0.2.0`, equal to the version in `host-rs/Cargo.toml`) on main builds the executables and
+publishes them on GitHub Releases (`.github/workflows/release.yml`).
 
 ```bash
 scripts/check     # what CI runs: install, typecheck, test, build

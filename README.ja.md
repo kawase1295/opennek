@@ -30,13 +30,21 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. キットのシリアルポートを指定してホストを起動します。[Node.js](https://nodejs.org/) 22.13 以降が必要で、Linux・Windows・macOS で動きます。
+3. [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest) から OS に合ったホストをダウンロードします。
+   実行ファイル 1 つだけで、ほかに入れるものはありません。
+   `opennek-<version>-linux-x64`、`opennek-<version>-windows-x64.exe`、`opennek-<version>-macos-arm64`（Apple シリコン）、
+   `opennek-<version>-macos-x64`（Intel Mac）があります。チェックサムは `SHA256SUMS` にあります。
+4. キットのシリアルポートを指定して起動します。
    ```bash
-   npx opennek --open --sigfox /dev/ttyACM0      # Linux
-   npx opennek --open --sigfox COM3              # Windows
-   npx opennek --open --sigfox /dev/cu.usbmodem1101   # macOS
+   chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --open --sigfox /dev/ttyACM0     # Linux
+   chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --open --sigfox /dev/cu.usbmodem1101   # macOS
+   .\opennek-<version>-windows-x64.exe --open --sigfox COM3       # Windows（PowerShell）
    ```
-   `npm install -g opennek` で `opennek` コマンドとして入れることもできます。`--sigfox` を省くと、Web UI でポートを選べます。
+   `--sigfox` を省くと、Web UI でポートを選べます。オプションの一覧は `--help` で表示されます。
+
+   実行ファイルには署名がありません。Windows で SmartScreen の「Windows によって PC が保護されました」が出たら、
+   **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
+   一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
 
 <http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
 Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
@@ -120,14 +128,18 @@ Web UI は Windows のブラウザから <http://localhost:8085/> で開けま�
 
 ## 開発
 
-ソースからホストを動かす場合:
+ソースからホストを動かす場合（[rustup](https://rustup.rs/) が必要です。Rust のバージョンは `rust-toolchain.toml` で決まります）:
 
 ```bash
-cd host
-npm install
-npm run build
-npm start -- --sigfox /dev/ttyACM0     # 変更のたびに再起動するなら `npm run dev`
+cd host-rs
+cargo run --release -- --sigfox /dev/ttyACM0
 ```
+
+`host/` の TypeScript 版ホストは Rust 版に置き換え中で、
+`cd host && npm install && npm run build && npm start -- --sigfox /dev/ttyACM0` でまだ動きます。
+
+main 上でバージョンタグ（`v0.2.0`。`host-rs/Cargo.toml` のバージョンと一致させる）を push すると、
+実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
 
 ```bash
 scripts/check     # CI と同じ検査: install・型検査・テスト・ビルド
