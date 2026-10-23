@@ -103,6 +103,71 @@ pub struct Device {
     pub last_seq: Option<i64>,
 }
 
+/// A device as the UI saves it, checked and normalized like the TypeScript host's DeviceInput
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeviceInput {
+    /// 8 hex digits, upper case
+    pub id: String,
+    pub name: String,
+    /// 32 hex digits in lower case, or empty
+    pub key: String,
+    /// none, static or callback
+    pub downlink_mode: String,
+    /// A downlink template (see downlink.rs), lower case
+    pub downlink_data: String,
+    pub payload_config: String,
+}
+
+const DOWNLINK_MODES: [&str; 3] = ["none", "static", "callback"];
+
+fn is_hex(s: &str, digits: usize) -> bool {
+    s.len() == digits && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+impl DeviceInput {
+    /// `id` from the path, the other fields from the body; fields left out take their defaults
+    pub fn parse(id: &str, body: Value) -> std::result::Result<DeviceInput, String> {
+        let field = |k: &str| match body.get(k) {
+            None => Ok(String::new()),
+            Some(Value::String(s)) => Ok(s.clone()),
+            Some(_) => Err(format!("{k}: expected string")),
+        };
+        if !is_hex(id, 8) {
+            return Err("id: 8 hex digits".into());
+        }
+        let name = field("name")?;
+        if name.chars().count() > 64 {
+            return Err("name: at most 64 characters".into());
+        }
+        let key = field("key")?;
+        if !key.is_empty() && !is_hex(&key, 32) {
+            return Err("key: 16 bytes of hex".into());
+        }
+        let mut downlink_mode = field("downlinkMode")?;
+        if downlink_mode.is_empty() && body.get("downlinkMode").is_none() {
+            downlink_mode = "none".into();
+        }
+        if !DOWNLINK_MODES.contains(&downlink_mode.as_str()) {
+            return Err(format!("downlinkMode: one of {}", DOWNLINK_MODES.join(", ")));
+        }
+        let downlink_data = field("downlinkData")?;
+        if !downlink_data.is_empty() {
+            crate::downlink::parse_downlink_template(&downlink_data).map_err(|e| format!("downlinkData: {e}"))?;
+        }
+        let payload_config = field("payloadConfig")?;
+        crate::payload::parse_payload_config(&payload_config).map_err(|e| format!("payloadConfig: {e}"))?;
+        Ok(DeviceInput {
+            id: id.to_uppercase(),
+            name,
+            key: key.to_lowercase(),
+            downlink_mode,
+            // variable names only pass in lower case, so the whole template can be
+            downlink_data: downlink_data.to_lowercase(),
+            payload_config,
+        })
+    }
+}
+
 /// How an uplink's authentication field checked out
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -351,6 +416,21 @@ impl Store {
         Ok(())
     }
 
+    pub fn upsert_device(&self, d: &DeviceInput, now: i64) -> Result<Device> {
+        self.db().execute(
+            "INSERT INTO devices (id, name, key, downlink_mode, downlink_data, payload_config, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT (id) DO UPDATE SET name = ?2, key = ?3, downlink_mode = ?4, downlink_data = ?5, payload_config = ?6",
+            params![d.id, d.name, d.key, d.downlink_mode, d.downlink_data, d.payload_config, now],
+        )?;
+        self.get_device(&d.id)?.ok_or(rusqlite::Error::QueryReturnedNoRows)
+    }
+
+    pub fn delete_device(&self, id: &str) -> Result<()> {
+        self.db().execute("DELETE FROM devices WHERE id = ?", [id])?;
+        Ok(())
+    }
+
     pub fn touch_device(&self, id: &str, seq: u16, time: i64) -> Result<()> {
         self.db().execute(
             "UPDATE devices SET last_seen = ?, last_seq = ? WHERE id = ?",
@@ -412,6 +492,15 @@ impl Store {
             )?
             .query_map(params![q.device_id, q.before, limit], to_message)?
             .collect()
+    }
+
+    /// All messages, or a device's
+    pub fn clear_messages(&self, device_id: Option<&str>) -> Result<()> {
+        match device_id {
+            Some(id) => self.db().execute("DELETE FROM messages WHERE device_id = ?", [id])?,
+            None => self.db().execute("DELETE FROM messages", [])?,
+        };
+        Ok(())
     }
 
     // --- callbacks (edited from #33 on; listed as stored)

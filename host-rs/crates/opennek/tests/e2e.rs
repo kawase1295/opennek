@@ -166,3 +166,124 @@ async fn changing_the_port_reconnects_the_receiver() {
     assert!(body["error"].as_str().unwrap().contains("sigfoxFreq"));
     host.radio.stop();
 }
+
+async fn send(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json");
+    let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
+    let res = opennek::server::router(host.clone())
+        .oneshot(req.body(body).unwrap())
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+async fn wait_for_messages(host: &Arc<Host>, n: usize) -> Value {
+    for _ in 0..1000 {
+        let m = get_json(host, "/api/messages").await;
+        if m.as_array().unwrap().len() == n {
+            return m;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{n} messages expected");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_registered_device_gets_its_uplinks_decoded() {
+    let store = Store::open_in_memory().unwrap();
+    let host = Host::new(store, Box::new(FakeStreamer::default()));
+    let (status, device) = send(
+        &host,
+        "PUT",
+        "/api/devices/00763da3",
+        Some(json!({ "name": "kit", "payloadConfig": "v::uint:4 w::uint:4" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{device}");
+    assert_eq!(
+        (device["id"].clone(), device["name"].clone()),
+        (json!("00763DA3"), json!("kit"))
+    );
+    let (status, err) = send(&host, "PUT", "/api/devices/00763DA3", Some(json!({ "key": "12" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"].as_str().unwrap().starts_with("key:"));
+
+    // the recorded uplinks carry 0x11; a new host so that the device is configured before they arrive
+    let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
+    let store = Store::open_in_memory().unwrap();
+    let mut s = store.settings().unwrap();
+    s.sigfox_port = "fake0".into();
+    store.save_settings(&s).unwrap();
+    let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
+    send(
+        &host,
+        "PUT",
+        "/api/devices/00763DA3",
+        Some(json!({ "payloadConfig": "v::uint:4 w::uint:4" })),
+    )
+    .await;
+    host.radio.start();
+    let messages = wait_for_messages(&host, 3).await;
+    host.radio.stop();
+    assert_eq!(messages[0]["decoded"], json!({ "v": 1, "w": 1 }));
+    // the configuration was kept when the device was seen on air
+    let devices = get_json(&host, "/api/devices").await;
+    assert_eq!(devices[0]["payloadConfig"], "v::uint:4 w::uint:4");
+
+    let (status, _, csv) = get(&host, "/api/messages.csv?device=00763da3").await;
+    assert_eq!(status, StatusCode::OK);
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(
+        lines[0],
+        "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus"
+    );
+    assert_eq!(lines.len(), 4);
+    let cells: Vec<&str> = lines[1].splitn(6, ',').collect();
+    assert_eq!(cells[2..5], ["00763DA3", "1981", "11"]);
+    assert!(cells[1].ends_with('Z') && cells[1].len() == 24, "{}", cells[1]);
+    assert!(
+        cells[5].starts_with(r#""{""v"":1,""w"":1}",false,false,"#),
+        "{}",
+        cells[5]
+    );
+
+    let (status, _) = send(&host, "DELETE", "/api/messages?device=0A1B2C3D", None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(get_json(&host, "/api/messages").await.as_array().unwrap().len(), 3);
+    send(&host, "DELETE", "/api/messages?device=00763da3", None).await;
+    assert_eq!(get_json(&host, "/api/messages").await, json!([]));
+    let (status, _) = send(&host, "DELETE", "/api/devices/00763da3", None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(get_json(&host, "/api/devices").await, json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
+    let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
+    let store = Store::open_in_memory().unwrap();
+    let mut s = store.settings().unwrap();
+    s.sigfox_port = "fake0".into();
+    store.save_settings(&s).unwrap();
+    let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
+    send(
+        &host,
+        "PUT",
+        "/api/devices/00763DA3",
+        Some(json!({ "payloadConfig": "x::uint:16" })),
+    )
+    .await;
+    host.radio.start();
+    let messages = wait_for_messages(&host, 3).await;
+    host.radio.stop();
+    assert!(
+        messages[0]["decoded"]["_error"]
+            .as_str()
+            .unwrap()
+            .contains("exceeds payload")
+    );
+}

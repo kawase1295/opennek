@@ -64,3 +64,24 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_u
         .collect();
     assert_eq!(statuses, ["pending", "unsupported"]);
 }
+
+#[test]
+fn an_oob_frame_that_is_not_a_control_message_is_decoded_with_the_payload_config() {
+    let engine = Engine::new(Store::open_in_memory().unwrap());
+    let body = serde_json::json!({ "payloadConfig": "v::uint:8" });
+    engine
+        .store()
+        .upsert_device(&opennek::store::DeviceInput::parse("00763DA3", body).unwrap(), 0)
+        .unwrap();
+    let RadioEvent::Message(mut m) = message(3, -80.0) else {
+        unreachable!()
+    };
+    m.message.control = true;
+    m.message.downlink = false;
+    engine.handle_radio(RadioEvent::Message(m));
+    let stored = &engine.store().list_messages(&MessageQuery::default()).unwrap()[0].fields;
+    assert_eq!(
+        (stored.oob, stored.decoded.clone()),
+        (true, Some(serde_json::json!({ "v": 0x11 })))
+    );
+}
