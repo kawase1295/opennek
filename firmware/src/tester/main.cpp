@@ -180,7 +180,7 @@ static void saveCapture(const Result& r) {
   snprintf(path, sizeof(path), "/opennek/raw-%lu-%s-%u.rssi", (unsigned long)r.uptimeS, idHex(r.m.deviceId).c_str(), r.m.counter);
   File f = SD.open(path, FILE_WRITE);
   if (!f) return;
-  // Same format as host/test/fixtures: raw streamer values, oldest first
+  // Same format as fixtures/: raw streamer values, oldest first
   if (rawFull) f.write(rawRing + rawPos, rawSize - rawPos);
   f.write(rawRing, rawPos);
   f.close();

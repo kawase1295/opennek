@@ -148,7 +148,7 @@ Keep the LSM100A on Grove G1/G2 as above. Press `L` and send one message from th
 Other keys: `D` registered devices (`1`-`8` removes one), `H` history, `M` mute, `R` reset counters,
 `` ` `` back. With a microSD card, results are appended to `/opennek/tester.csv` and the last 30 s of RSSI
 samples are saved next to every WARN/FAIL result (`/opennek/raw-*.rssi`, the same format as
-`host/test/fixtures`). USB serial prints one JSON line per result and a health line every 10 s.
+`fixtures/`). USB serial prints one JSON line per result and a health line every 10 s.
 
 The tester only receives: the LSM100A firmware never transmits and the Cardputer firmware never starts
 Wi-Fi or Bluetooth. Messages from devices that are not registered are neither shown nor logged (learn mode

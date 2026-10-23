@@ -12,7 +12,7 @@ import { ReadStream as TtyReadStream } from 'node:tty'
 import { hasCommand, ptyPair, run, serveFetch, sleep } from './helpers'
 
 // Real RC3 uplinks from device 00763DA3 recorded with the LSM100A streamer (2 kHz, raw = -2 * dBm)
-const live = readFileSync(join(import.meta.dirname, 'fixtures/rc3-00763DA3-live.rssi'))
+const live = readFileSync(join(import.meta.dirname, '../../fixtures/rc3-00763DA3-live.rssi'))
 
 // The streamer's line format: 64 samples per line with a 16-bit sequence number
 function* streamerLines(raw: Uint8Array) {

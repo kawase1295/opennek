@@ -137,7 +137,7 @@ scripts/check     # what CI runs: install, typecheck, test, build
 (cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
-  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)
+  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
 ```
 
 The host tests decode recorded captures of real Sigfox devices end to end (uplink → callback → downlink) and
