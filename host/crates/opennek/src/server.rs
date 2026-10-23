@@ -23,10 +23,10 @@ use crate::serial::list_serial_ports;
 use crate::store::{CallbackInput, DeviceInput, MessageQuery};
 
 // The UI is plain JS without a build step; it is embedded so the binary needs no file next to it
-const INDEX_HTML: &str = include_str!("../../../../host/src/ui/index.html");
-const APP_JS: &str = include_str!("../../../../host/src/ui/app.js");
-const I18N_JS: &str = include_str!("../../../../host/src/ui/i18n.js");
-const STYLE_CSS: &str = include_str!("../../../../host/src/ui/style.css");
+const INDEX_HTML: &str = include_str!("../../../ui/index.html");
+const APP_JS: &str = include_str!("../../../ui/app.js");
+const I18N_JS: &str = include_str!("../../../ui/i18n.js");
+const STYLE_CSS: &str = include_str!("../../../ui/style.css");
 
 const JS: &str = "text/javascript; charset=utf-8";
 /// A comment this often keeps proxies from closing the event stream

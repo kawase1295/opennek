@@ -10,14 +10,15 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
 
 ```
 ┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB シリアル ┌───────────────────────┐  HTTP   ┌──────────┐
-│ Sigfox       │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Node + Hono) │ ──────▶ │ あなたの │
+│ Sigfox       │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Rust)        │ ──────▶ │ あなたの │
 │ デバイス      │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ アプリ   │
 └──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | 部品 | 中身 |
 |---|---|
-| `host/` | ホスト。Node.js + Hono + node:sqlite。Sigfox の解読器、Web UI、コールバック、ダウンリンク |
+| `host/` | ホスト。Rust の単一実行ファイル（axum、SQLite）。Sigfox の解読器、Web UI（`host/ui` を同梱）、コールバック、ダウンリンク |
+| `tools/lsm/` | LSM100A 受信機用の Node ツール。ブリッジ経由のファーム書き込み、RSSI/CFO の録音 |
 | `firmware/` | PlatformIO (Arduino) ファーム。`radio-xiao-sx1262` = 無線機。Wio-SX1262 の RSSI をホストへ流し、ダウンリンクを送信する |
 | `docs/protocol.ja.md` | コールバックとダウンリンクの仕様 |
 
@@ -131,26 +132,26 @@ Web UI は Windows のブラウザから <http://localhost:8085/> で開けま�
 ソースからホストを動かす場合（[rustup](https://rustup.rs/) が必要です。Rust のバージョンは `rust-toolchain.toml` で決まります）:
 
 ```bash
-cd host-rs
+cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-`host/` の TypeScript 版ホストは Rust 版に置き換え中で、
-`cd host && npm install && npm run build && npm start -- --sigfox /dev/ttyACM0` でまだ動きます。
+`host/ui` の Web UI はビルド不要の素の JS で、実行ファイルに埋め込まれます。
+`tools/lsm` の LSM100A 用ツールは Node で動きます（`cd tools/lsm && npm install`）。必要なのはファームを扱うときだけです。
 
-main 上でバージョンタグ（`v0.2.0`。`host-rs/Cargo.toml` のバージョンと一致させる）を push すると、
+main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョンと一致させる）を push すると、
 実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
 
 ```bash
-scripts/check     # CI と同じ検査: install・型検査・テスト・ビルド
-(cd host && npm test && npm run typecheck)
+scripts/check     # CI と同じ検査: ホストのフォーマット・lint・テスト、UI の文言、LSM100A ツールのテスト
+(cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
 ```
 
-ホストのテストは、本物の Sigfox デバイスの録音を通しで解読し（アップリンク → コールバック → ダウンリンク）、
-socat の仮想シリアルで受信機とのやりとりも確認します。ファームの C++ 解読器も同じ録音で一致を確認しています。
+ホストのテストは、本物の Sigfox デバイスの録音をストリーマの行として流す偽の受信機を使い、
+通しで解読します（アップリンク → コールバック → ダウンリンク）。ファームの C++ 解読器も同じ録音で一致を確認しています。
 
 ## ライセンス
 

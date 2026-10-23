@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
@@ -11,6 +11,6 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test", "tools"],
-  "exclude": ["src/ui"]
+  "include": [".", "test"],
+  "exclude": ["node_modules"]
 }

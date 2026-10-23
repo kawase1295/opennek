@@ -1,6 +1,1 @@
-node_modules/
-dist/
-# copied from the repository root by prepack
-README.md
-README.ja.md
-LICENSE
+/target

@@ -32,7 +32,7 @@ cd firmware && pio run -e bridge-s3 -t upload
 
 ```bash
 cd firmware-lsm100a && pio run                       # .pio/build/lsm100a/firmware.bin
-cd host && npx tsx tools/lsm-flash.ts /dev/ttyACM0 ../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
+cd tools/lsm && npm install && npx tsx lsm-flash.ts /dev/ttyACM0 ../../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
 ```
 
 `lsm-flash.ts` resets the module (ATZ for the stock firmware, `X` for this firmware) and talks to the
@@ -45,7 +45,7 @@ To go back to the stock AT firmware, flash `FW/LSM100A_SDK_V104_240129.bin` from
 ## Capture
 
 ```bash
-cd host && npx tsx tools/rssi-capture.ts /dev/ttyACM0 --out capture
+cd tools/lsm && npx tsx rssi-capture.ts /dev/ttyACM0 --out capture
 ```
 
 Send a few frames from another Sigfox device (e.g. `AT$SF=0102030405` on a second LSM100A) and stop with
@@ -57,7 +57,7 @@ Options: `--freq <hz>` (default 923200000), `--bw <code>` (SX126x RX bandwidth c
 ## Decode Sigfox uplinks live
 
 ```bash
-cd host && npx tsx tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
+cd tools/lsm && npx tsx sigfox-listen.ts /dev/ttyACM0 [--save session.json]
 ```
 
 Prints every frame (repetition, CRC, RSSI, receiver clock error) and one line per message once its
@@ -70,7 +70,7 @@ The host runs the same decoder. Real Sigfox messages then appear in the Web UI a
 trigger the Sigfox-compatible callbacks:
 
 ```bash
-cd host && npx tsx src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
+opennek --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 ```
 
 The port is remembered; pick it (or "Don't use" to turn the receiver off) under Settings → Sigfox receiver (RC3).
@@ -154,7 +154,7 @@ The tester only receives: the LSM100A firmware never transmits and the Cardputer
 Wi-Fi or Bluetooth. Messages from devices that are not registered are neither shown nor logged (learn mode
 only offers the ID of the next device it hears).
 
-The decoder is a C++ port of `host/src/sigfox` (`firmware/lib/SigfoxRx`); `firmware/test/sigfox_native_test.cpp`
+The decoder is a C++ port of `tools/lsm/sigfox` (`firmware/lib/SigfoxRx`); `firmware/test/sigfox_native_test.cpp`
 checks that it gives the same results on the recorded captures.
 
 ## Serial protocol (115200 bps)

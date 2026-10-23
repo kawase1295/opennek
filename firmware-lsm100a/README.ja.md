@@ -32,7 +32,7 @@ cd firmware && pio run -e bridge-s3 -t upload
 
 ```bash
 cd firmware-lsm100a && pio run                       # .pio/build/lsm100a/firmware.bin
-cd host && npx tsx tools/lsm-flash.ts /dev/ttyACM0 ../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
+cd tools/lsm && npm install && npx tsx lsm-flash.ts /dev/ttyACM0 ../../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
 ```
 
 `lsm-flash.ts` はモジュールをリセットし（工場出荷の AT ファームなら ATZ、このファームなら `X`）、
@@ -45,7 +45,7 @@ IAP ブートローダと Ymodem で通信します。自動でリセットさ�
 ## キャプチャ
 
 ```bash
-cd host && npx tsx tools/rssi-capture.ts /dev/ttyACM0 --out capture
+cd tools/lsm && npx tsx rssi-capture.ts /dev/ttyACM0 --out capture
 ```
 
 別の Sigfox デバイス（2 台目の LSM100A で `AT$SF=0102030405` など）から何回か送信し、Ctrl+C で止めます。
@@ -57,7 +57,7 @@ cd host && npx tsx tools/rssi-capture.ts /dev/ttyACM0 --out capture
 ## Sigfox アップリンクをリアルタイムで解読する
 
 ```bash
-cd host && npx tsx tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
+cd tools/lsm && npx tsx sigfox-listen.ts /dev/ttyACM0 [--save session.json]
 ```
 
 フレームごと（何回目の繰り返しか、CRC、RSSI、受信機の時計のずれ）と、繰り返しをまとめたメッセージごとに
@@ -70,7 +70,7 @@ CRC 込みで正しく解読できることを確認済みです。LSM100A の R
 Sigfox 互換のコールバックも実行されます。
 
 ```bash
-cd host && npx tsx src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
+opennek --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 ```
 
 ポートは保存されます。設定 → Sigfox 受信機 (RC3) でも選べます（「使わない」で無効）。
@@ -154,7 +154,7 @@ microSD カードを入れると、結果を `/opennek/tester.csv` に追記し�
 起動しません。登録していないデバイスのメッセージは表示も記録もしません（学習モードで、次に受信したデバイスの
 ID を登録候補として示すときだけ例外です）。
 
-解読処理は `host/src/sigfox` を C++ に移植したもの（`firmware/lib/SigfoxRx`）で、`firmware/test/sigfox_native_test.cpp`
+解読処理は `tools/lsm/sigfox` を C++ に移植したもの（`firmware/lib/SigfoxRx`）で、`firmware/test/sigfox_native_test.cpp`
 で録音済みデータに対して同じ結果になることを確認しています。
 
 ## シリアルプロトコル (115200bps)

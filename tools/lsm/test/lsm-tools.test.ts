@@ -3,8 +3,8 @@ import { constants, existsSync, mkdtempSync, openSync, writeFileSync, writeSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ReadStream as TtyReadStream } from 'node:tty'
-import { bootloaderOutput, crc16, headerBlock, ymodemBlock } from '../tools/lsm-flash'
-import { findBursts, plotHtml } from '../tools/rssi-capture'
+import { bootloaderOutput, crc16, headerBlock, ymodemBlock } from '../lsm-flash'
+import { findBursts, plotHtml } from '../rssi-capture'
 import { hasCommand, ptyPair, run, sleep } from './helpers'
 
 test('crc16 matches the XMODEM check value', () => {
@@ -132,7 +132,7 @@ test.skipIf(!hasSocat)('lsm-flash sends an image through the IAP ymodem dialog',
   for (let i = 8; i < image.length; i++) image[i] = (i * 7) & 0xff
   const file = join(dir, 'fw.bin')
   writeFileSync(file, image)
-  const { code, out } = await run(process.execPath, ['--import', 'tsx', join(import.meta.dirname, '../tools/lsm-flash.ts'), hostSide, file])
+  const { code, out } = await run(process.execPath, ['--import', 'tsx', join(import.meta.dirname, '../lsm-flash.ts'), hostSide, file])
   clearInterval(askCrc)
   rs.destroy()
   expect(out).toContain('Done.')

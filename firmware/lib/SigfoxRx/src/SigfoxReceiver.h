@@ -1,5 +1,5 @@
 // Streaming Sigfox receiver: takes raw streamer samples as they arrive, decodes complete frames and merges
-// the up to three repetitions of a message into one. Port of host/src/sigfox/receiver.ts.
+// the up to three repetitions of a message into one. Port of tools/lsm/sigfox/receiver.ts.
 // Keeps the raw values (1 byte per sample, dBm = -raw / 2): 12 s at 2 kHz is 24 KB.
 #pragma once
 #include <functional>

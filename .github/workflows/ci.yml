@@ -18,7 +18,7 @@ jobs:
           node-version: 22
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: host-rs
+          workspaces: host
       # The pty tests need socat; they are skipped where it is missing (Windows)
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y socat

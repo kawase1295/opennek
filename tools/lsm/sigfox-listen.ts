@@ -2,7 +2,7 @@
 //   npx tsx tools/sigfox-listen.ts /dev/ttyACM0 [--freq 923200000] [--save capture.json]
 import { writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
-import { SigfoxReceiver } from '../src/sigfox/receiver'
+import { SigfoxReceiver } from './sigfox/receiver'
 import { openPort } from './serial'
 
 const { values: args, positionals } = parseArgs({

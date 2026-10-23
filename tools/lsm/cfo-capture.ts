@@ -8,8 +8,8 @@
 import { writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { parseArgs } from 'node:util'
-import { findBursts } from '../src/sigfox/demod'
-import { CFO_EVERY, cfoSigned, cfoStepHz, RC3_DELTA_F_MF_HZ } from '../src/sigfox/frequency'
+import { findBursts } from './sigfox/demod'
+import { CFO_EVERY, cfoSigned, cfoStepHz, RC3_DELTA_F_MF_HZ } from './sigfox/frequency'
 import { openPort } from './serial'
 import { isMain } from './main'
 

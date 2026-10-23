@@ -1,7 +1,7 @@
 // Sigfox uplink frame layout, as built by sigfox-ep-lib (github.com/sigfox-tech-radio/sigfox-ep-lib):
 //   PR (0xAAAA) | FT (16 bit) | LI(2) BF(1) REP(1) MC(12) | EP ID (4, LSB first) | payload | auth | CRC16
 // Repetitions 2 and 3 (ranks 1 and 2 here) convolve everything after FT.
-// Port of host/src/sigfox/frame.ts; bit strings are '0'/'1' characters, as there.
+// Port of tools/lsm/sigfox/frame.ts; bit strings are '0'/'1' characters, as there.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
