@@ -147,7 +147,7 @@ LSM100A は上と同じく Grove の G1/G2 につなぎます。`L` を押して
 
 ほかのキー: `D` 登録済みデバイス（`1`〜`8` で削除）、`H` 履歴、`M` 消音、`R` 集計のリセット、`` ` `` 戻る。
 microSD カードを入れると、結果を `/opennek/tester.csv` に追記し、WARN/FAIL のたびに直前 30 秒の RSSI を
-`/opennek/raw-*.rssi`（`host/test/fixtures` と同じ形式）に保存します。USB シリアルには結果ごとに JSON を 1 行、
+`/opennek/raw-*.rssi`（`fixtures/` と同じ形式）に保存します。USB シリアルには結果ごとに JSON を 1 行、
 10 秒ごとに動作状態を 1 行出力します。
 
 このテスターは受信だけを行います。LSM100A のファームは送信せず、Cardputer のファームも Wi-Fi や Bluetooth を

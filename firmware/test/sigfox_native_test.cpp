@@ -1,7 +1,7 @@
 // Checks the C++ Sigfox decoder (lib/SigfoxRx) against the same vectors and real captures as
 // host/test/sigfox.test.ts. Run on the PC:
 //   cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
-//     sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures
+//     sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures
 // With --dump <file.rssi>, prints every frame and message instead (to compare with the TypeScript decoder).
 #include <stdio.h>
 #include <string.h>
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
     return failures ? 1 : 0;
   }
   testFrames();
-  testCaptures(argc > 1 ? argv[1] : "../../host/test/fixtures");
+  testCaptures(argc > 1 ? argv[1] : "../../fixtures");
   printf(failures ? "%d failure(s)\n" : "all sigfox tests passed\n", failures);
   return failures ? 1 : 0;
 }

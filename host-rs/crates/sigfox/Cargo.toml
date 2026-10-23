@@ -1,0 +1,17 @@
+[package]
+name = "sigfox"
+description = "Sigfox uplink demodulation, frame decoding, authentication and downlink frames, with no I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+aes = "0.8"
+
+[dev-dependencies]
+base64 = "0.22"
+serde_json = "1"
+
+[lints]
+workspace = true

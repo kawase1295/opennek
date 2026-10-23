@@ -134,7 +134,7 @@ scripts/check     # CI と同じ検査: install・型検査・テスト・ビル
 (cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
-  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)
+  sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
 ```
 
 ホストのテストは、本物の Sigfox デバイスの録音を通しで解読し（アップリンク → コールバック → ダウンリンク）、
