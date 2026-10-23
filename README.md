@@ -43,6 +43,10 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    ```
    Without `--sigfox`, pick the port in the web UI. `--help` lists all options.
 
+   OpenNEK is started from a terminal opened in the download folder (on Linux, right-click the folder → **Open in
+   Terminal**). Double-clicking it in the file manager does not start it: on Linux, Files says "There is no app
+   installed for executable files".
+
    The binaries are not signed. On Windows, SmartScreen may say "Windows protected your PC": choose
    **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
    `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.
