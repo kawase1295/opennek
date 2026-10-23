@@ -1,30 +1,138 @@
 name: release
-# Publishes host/ to npm when a version tag (v0.2.0) is pushed on main.
-# Needs the NPM_TOKEN repository secret (an npm automation token).
+# A version tag (v0.2.0) pushed on main builds the host (host-rs/) for each OS and attaches the
+# executables to a GitHub Release. Pull requests that change this file run the builds only, so
+# the cross builds are proven before a tag needs them.
 on:
   push:
     tags: ['v*']
+  pull_request:
+    paths: ['.github/workflows/release.yml']
+permissions:
+  contents: read
 jobs:
-  publish:
+  verify:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # npm provenance
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: The tag is on main and matches the package version
+      - id: version
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"$/\1/p' host-rs/Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
+      - name: The tag is on main and matches the Cargo.toml version
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-          test "v$(node -p "require('./host/package.json').version")" = "$GITHUB_REF_NAME"
-      - uses: actions/setup-node@v4
+          test "v$VERSION" = "$GITHUB_REF_NAME"
+      # On pull requests ci.yml already runs scripts/check
+      - if: github.event_name == 'push'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
-      - run: sudo apt-get install -y socat
-      - run: scripts/check
-      - run: npm publish --provenance --access public
-        working-directory: host
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - if: github.event_name == 'push'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host-rs
+      - if: github.event_name == 'push'
+        run: sudo apt-get install -y socat
+      - if: github.event_name == 'push'
+        run: scripts/check
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl links everything statically, so one binary runs on any distro
+          # (serialport is built without libudev, rusqlite bundles SQLite)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: linux-x64
+            ext: ''
+            best_effort: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x64
+            ext: .exe
+            best_effort: false
+          # macOS is best effort (#25) and unsigned; x64 is cross-built on the arm64 runner
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: macos-arm64
+            ext: ''
+            best_effort: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset: macos-x64
+            ext: ''
+            best_effort: true
+    runs-on: ${{ matrix.os }}
+    # A failing macOS build must not hold back the Linux and Windows release
+    continue-on-error: ${{ matrix.best_effort }}
+    env:
+      NAME: opennek-${{ needs.verify.outputs.version }}-${{ matrix.asset }}${{ matrix.ext }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the toolchain; install it before adding the target to it
+      - working-directory: host-rs
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host-rs
+          key: ${{ matrix.target }}
+      - working-directory: host-rs
+        run: cargo build --release --locked --package opennek --target ${{ matrix.target }}
+      - run: |
+          mkdir dist
+          cp "host-rs/target/${{ matrix.target }}/release/opennek${{ matrix.ext }}" "dist/$NAME"
+          ls -l dist
+      - name: The Linux binary is static
+        if: runner.os == 'Linux'
+        run: |
+          file "dist/$NAME"
+          file "dist/$NAME" | grep -E 'static(-pie)? linked'
+          # ldd lists no shared libraries (it errors or says "statically linked")
+          ! (ldd "dist/$NAME" 2>&1 || true) | tee /dev/stderr | grep -q '=>'
+      # The x64 macOS binary cannot run on the arm64 runner without Rosetta
+      - name: The binary starts
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          "dist/$NAME" --version
+          "dist/$NAME" --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: dist/${{ env.NAME }}
+          if-no-files-found: error
+
+  release:
+    needs: [verify, build]
+    # build counts as successful when only the best-effort macOS jobs failed
+    if: github.event_name == 'push' && always() && needs.verify.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: opennek-*
+          path: dist
+          merge-multiple: true
+      - working-directory: dist
+        run: |
+          sha256sum opennek-* > SHA256SUMS
+          cat SHA256SUMS
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes dist/*
