@@ -9,8 +9,9 @@ use sigfox::auth::{PUBLIC_KEY, verify_uplink};
 use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
+use crate::payload::decode_payload;
 use crate::radio::{RadioEvent, RadioMessage, RadioStatus, now_ms};
-use crate::store::{Auth, DownlinkStatus, Message, NewMessage, Store};
+use crate::store::{Auth, Device, DownlinkStatus, Message, NewMessage, Store};
 
 /// The receiver merges repetitions until 10 s after the last one; a repetition later than that is ignored for this long
 const RECENT_MS: i64 = 60_000;
@@ -109,8 +110,9 @@ impl Engine {
             }
         }
         let id = m.device_id.to_string();
-        let auth = self.auth(&id, m)?;
         self.store.ensure_device(&id, now)?;
+        let device = self.store.get_device(&id)?;
+        let auth = Self::auth(device.as_ref(), m);
         self.store.touch_device(&id, m.counter, r.received_at)?;
         let decoded = m.control.then(|| decode_control(&m.payload)).flatten().map(|c| {
             let mut v = json!({
@@ -126,6 +128,16 @@ impl Engine {
                 o.insert("downlinkRssiDbm".into(), rssi.into());
             }
             v
+        });
+        let payload_config = device.as_ref().map_or("", |d| d.payload_config.as_str());
+        // an OOB frame that is not a known control message falls through to the device's format
+        let decoded = decoded.or_else(|| {
+            (!payload_config.is_empty() && !m.payload.is_empty()).then(|| {
+                match decode_payload(payload_config, &m.payload) {
+                    Ok(fields) => Value::Object(fields),
+                    Err(e) => json!({ "_error": e }),
+                }
+            })
         });
         let message = self.store.insert_message(&NewMessage {
             device_id: id,
@@ -161,13 +173,12 @@ impl Engine {
     }
 
     // A registered key decides. Anyone can sign with the public key, so it counts as 'public', like an unknown device
-    fn auth(&self, id: &str, m: &sigfox::receiver::SigfoxMessage) -> crate::store::Result<Auth> {
-        let key = self.store.get_device(id)?.and_then(|d| parse_key(&d.key));
-        Ok(match key {
+    fn auth(device: Option<&Device>, m: &sigfox::receiver::SigfoxMessage) -> Auth {
+        match device.and_then(|d| parse_key(&d.key)) {
             Some(key) if verify_uplink(&key, &m.fields(), &m.auth) => Auth::Ok,
             Some(_) => Auth::Bad,
             None if verify_uplink(&PUBLIC_KEY, &m.fields(), &m.auth) => Auth::Public,
             None => Auth::Unverified,
-        })
+        }
     }
 }

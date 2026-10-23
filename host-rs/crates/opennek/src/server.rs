@@ -5,11 +5,11 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::sse::{self, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, put};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 use tokio_stream::wrappers::BroadcastStream;
@@ -17,8 +17,9 @@ use tokio_stream::{Stream, StreamExt};
 
 use crate::engine::Event;
 use crate::host::Host;
+use crate::radio::now_ms;
 use crate::serial::list_serial_ports;
-use crate::store::MessageQuery;
+use crate::store::{DeviceInput, MessageQuery};
 
 // The UI is plain JS without a build step; it is embedded so the binary needs no file next to it
 const INDEX_HTML: &str = include_str!("../../../../host/src/ui/index.html");
@@ -60,7 +61,9 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/settings", get(settings).put(save_settings))
         .route("/serial/ports", get(serial_ports))
         .route("/devices", get(devices))
-        .route("/messages", get(messages))
+        .route("/devices/{id}", put(save_device).delete(delete_device))
+        .route("/messages", get(messages).delete(clear_messages))
+        .route("/messages.csv", get(messages_csv))
         .route("/callbacks", get(callbacks))
         .route("/callback-logs", get(callback_logs))
         .route("/events", get(events));
@@ -107,13 +110,87 @@ async fn devices(State(host): Shared) -> ApiResult {
     to_json(host.engine.store().list_devices()?)
 }
 
+async fn save_device(State(host): Shared, Path(id): Path<String>, Json(body): Json<Value>) -> ApiResult {
+    let input = DeviceInput::parse(&id, body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))?;
+    to_json(host.engine.store().upsert_device(&input, now_ms())?)
+}
+
+async fn delete_device(State(host): Shared, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+    host.engine.store().delete_device(&id.to_uppercase())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn device_param(q: &HashMap<String, String>) -> Option<String> {
+    q.get("device").filter(|d| !d.is_empty()).map(|d| d.to_uppercase())
+}
+
+async fn clear_messages(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> Result<StatusCode, ApiError> {
+    host.engine.store().clear_messages(device_param(&q).as_deref())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+const CSV_COLUMNS: [&str; 13] = [
+    "id",
+    "time",
+    "deviceId",
+    "seq",
+    "data",
+    "decoded",
+    "ack",
+    "oob",
+    "rssi",
+    "nbFrames",
+    "auth",
+    "downlink",
+    "downlinkStatus",
+];
+
+fn csv_cell(v: &Value) -> String {
+    let s = match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    if s.contains(['"', ',', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
+    }
+}
+
+async fn messages_csv(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> Result<Response, ApiError> {
+    let query = MessageQuery {
+        device_id: device_param(&q),
+        before: None,
+        limit: Some(1000),
+    };
+    let mut lines = vec![CSV_COLUMNS.join(",")];
+    for m in host.engine.store().list_messages(&query)? {
+        let row = serde_json::to_value(&m).unwrap_or_default();
+        let time = chrono::DateTime::from_timestamp_millis(m.fields.time).unwrap_or_default();
+        let cells = CSV_COLUMNS.map(|k| match k {
+            "time" => time.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
+            _ => csv_cell(&row[k]),
+        });
+        lines.push(cells.join(","));
+    }
+    let headers = [
+        (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+        (
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=\"opennek-messages.csv\"",
+        ),
+    ];
+    Ok((headers, format!("{}\n", lines.join("\n"))).into_response())
+}
+
 fn number<T: std::str::FromStr>(q: &HashMap<String, String>, k: &str) -> Option<T> {
     q.get(k).and_then(|v| v.parse().ok())
 }
 
 async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> ApiResult {
     let query = MessageQuery {
-        device_id: q.get("device").filter(|d| !d.is_empty()).map(|d| d.to_uppercase()),
+        device_id: device_param(&q),
         before: number(&q, "before"),
         limit: number(&q, "limit"),
     };
