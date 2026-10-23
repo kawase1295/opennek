@@ -144,7 +144,7 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
     assert_eq!(messages[0]["oob"], true);
     assert_eq!(messages.as_array().unwrap().len(), 1);
     assert_eq!(store.list_logs(None, None, None).unwrap().len(), 1);
-    assert_eq!(store.list_callbacks().unwrap()[0]["id"], 1);
+    assert_eq!(store.list_callbacks().unwrap()[0].id, 1);
     let s = store.settings().unwrap();
     assert_eq!(
         (s.sigfox_port.as_str(), s.sigfox_downlink, s.sigfox_freq),

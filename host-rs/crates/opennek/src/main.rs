@@ -50,6 +50,8 @@ fn print_events(host: &Host) {
         while let Ok(e) = events.recv().await {
             match e {
                 Event::Console { line, .. } => println!("[{}] {line}", ts()),
+                // the UI shows callback logs; the console does not
+                Event::CallbackLog { .. } => {}
                 Event::Radio { status: s } => {
                     let line = format!(
                         "sigfox: {}{}{}{}{}",
