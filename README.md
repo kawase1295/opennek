@@ -48,6 +48,9 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    **Open in Terminal**). Double-clicking it in the file manager does not start it: on Linux, Files says "There is no
    app installed for executable files".
 
+   On Linux, run `./opennek-*-linux-x64 install` once to add OpenNEK to the app menu; from then on, start it with a
+   click there (a terminal window shows its log, and closing it stops OpenNEK). `opennek uninstall` takes it out again.
+
    The binaries are not signed. On Windows, SmartScreen may say "Windows protected your PC": choose
    **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
    `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.

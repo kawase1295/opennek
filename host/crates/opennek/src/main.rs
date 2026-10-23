@@ -3,9 +3,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use opennek::cli::Args;
+use opennek::cli::{Args, Command};
 use opennek::engine::Event;
 use opennek::host::Host;
+use opennek::install::{InstallPaths, install, uninstall};
 use opennek::platform::{Os, browser_command, default_data_dir};
 use opennek::serial::SerialOpener;
 use opennek::store::{DownlinkStatus, Store};
@@ -94,9 +95,43 @@ fn open_store(args: &Args) -> Result<(Store, PathBuf), String> {
     Ok((store, dir))
 }
 
+// install / uninstall: the app menu entry on Linux
+fn manage_install(command: &Command) -> ExitCode {
+    if Os::current() != Os::Linux {
+        eprintln!("opennek: install and uninstall are for Linux; on Windows, double-click the .exe");
+        return ExitCode::FAILURE;
+    }
+    let home = std::env::home_dir().unwrap_or_default();
+    let paths = InstallPaths::new(&home, std::env::var("XDG_DATA_HOME").ok().as_deref());
+    let result = match command {
+        Command::Install => std::env::current_exe().and_then(|exe| install(&exe, &paths)).map(|_| {
+            println!("Installed {}", paths.bin.display());
+            println!("Added OpenNEK to the app menu ({})", paths.desktop.display());
+        }),
+        Command::Uninstall => uninstall(&paths).map(|removed| {
+            for path in &removed {
+                println!("Removed {}", path.display());
+            }
+            if removed.is_empty() {
+                println!("OpenNEK was not installed");
+            }
+        }),
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("opennek: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let args = Args::parse();
+    if let Some(command) = &args.command {
+        return manage_install(command);
+    }
     let (store, dir) = match open_store(&args) {
         Ok(s) => s,
         Err(e) => {

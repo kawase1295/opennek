@@ -2,12 +2,14 @@
 
 use std::path::PathBuf;
 
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, Subcommand};
 
 /// OpenNEK — a local network for real Sigfox devices
 #[derive(Parser)]
 #[command(name = "opennek", version, disable_version_flag = true)]
 pub struct Args {
+    #[command(subcommand)]
+    pub command: Option<Command>,
     /// Port of the web UI / API
     #[arg(long, default_value_t = 8085)]
     pub port: u16,
@@ -33,6 +35,14 @@ pub struct Args {
     /// Print the version
     #[arg(short = 'v', long, action = ArgAction::Version)]
     pub version: (),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Add OpenNEK to the app menu (Linux): copies this executable to ~/.local/bin
+    Install,
+    /// Remove what install added; the data stays
+    Uninstall,
 }
 
 impl Args {

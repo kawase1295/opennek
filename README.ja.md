@@ -47,6 +47,9 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    Linux と macOS では、ダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
    ファイルマネージャーでダブルクリックしても起動しません。Linux では「There is no app installed for executable files」と表示されます。
 
+   Linux では一度 `./opennek-*-linux-x64 install` を実行すると、アプリのメニューに OpenNEK が追加され、以後はそこからクリックで起動できます
+   （端末のウィンドウにログが出て、閉じると終了します）。`opennek uninstall` で元に戻せます。
+
    実行ファイルには署名がありません。Windows で SmartScreen の「Windows によって PC が保護されました」が出たら、
    **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
    一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
