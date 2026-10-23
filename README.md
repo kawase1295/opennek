@@ -30,19 +30,20 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. Start the host with the kit's serial port (Node.js 22.13 or later):
+3. Start the host with the kit's serial port. It needs [Node.js](https://nodejs.org/) 22.13 or later and runs on
+   Linux, Windows and macOS:
    ```bash
-   cd host
-   npm install
-   npm run build
-   npm start -- --sigfox /dev/ttyACM0
+   npx opennek --open --sigfox /dev/ttyACM0      # Linux
+   npx opennek --open --sigfox COM3              # Windows
+   npx opennek --open --sigfox /dev/cu.usbmodem1101   # macOS
    ```
+   `npm install -g opennek` installs the `opennek` command instead. Without `--sigfox`, pick the port in the web UI.
 
 Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
 **Settings → Sigfox receiver (RC3)**. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
-If you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
+On Linux, if you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
 
 Data is stored in `~/.local/share/opennek/` (Windows: `%APPDATA%\opennek\`, macOS: `~/Library/Application Support/opennek/`).
 
@@ -109,7 +110,7 @@ variables as Sigfox custom callbacks (`{device}` `{time}` `{data}` `{seqNumber}`
 
 ## Using it on WSL2
 
-WSL cannot see USB devices by default. Use [usbipd-win](https://github.com/dorssel/usbipd-win) on Windows
+On Windows, running OpenNEK natively (above) is the simplest. To run it inside WSL instead: WSL cannot see USB devices by default. Use [usbipd-win](https://github.com/dorssel/usbipd-win) on Windows
 to attach the kit to WSL (run in an elevated PowerShell):
 
 ```powershell
@@ -122,7 +123,17 @@ The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 
 ## Development
 
+Run the host from source:
+
 ```bash
+cd host
+npm install
+npm run build
+npm start -- --sigfox /dev/ttyACM0     # or `npm run dev` to restart on changes
+```
+
+```bash
+scripts/check     # what CI runs: install, typecheck, test, build
 (cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

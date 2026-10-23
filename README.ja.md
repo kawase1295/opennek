@@ -30,19 +30,19 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. キットのシリアルポートを指定してホストを起動します（Node.js 22.13 以降）。
+3. キットのシリアルポートを指定してホストを起動します。[Node.js](https://nodejs.org/) 22.13 以降が必要で、Linux・Windows・macOS で動きます。
    ```bash
-   cd host
-   npm install
-   npm run build
-   npm start -- --sigfox /dev/ttyACM0
+   npx opennek --open --sigfox /dev/ttyACM0      # Linux
+   npx opennek --open --sigfox COM3              # Windows
+   npx opennek --open --sigfox /dev/cu.usbmodem1101   # macOS
    ```
+   `npm install -g opennek` で `opennek` コマンドとして入れることもできます。`--sigfox` を省くと、Web UI でポートを選べます。
 
 <http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
 Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
 UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（ブラウザに保存されます）。
 
-シリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
+Linux でシリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
 
 データは `~/.local/share/opennek/` に保存されます（Windows は `%APPDATA%\opennek\`、macOS は `~/Library/Application Support/opennek/`）。
 
@@ -107,7 +107,7 @@ ATS410=0    → 秘密鍵に戻す。本番ネットワークで使う前に必�
 
 ## WSL2 で使う場合
 
-WSL には USB がそのままでは見えません。Windows 側で [usbipd-win](https://github.com/dorssel/usbipd-win) を使い、
+Windows では上の手順どおり Windows 上で直接動かすのがいちばん簡単です。WSL の中で動かす場合、WSL には USB がそのままでは見えません。Windows 側で [usbipd-win](https://github.com/dorssel/usbipd-win) を使い、
 キットを WSL に渡してください（PowerShell を管理者で開いて実行）:
 
 ```powershell
@@ -120,7 +120,17 @@ Web UI は Windows のブラウザから <http://localhost:8085/> で開けま�
 
 ## 開発
 
+ソースからホストを動かす場合:
+
 ```bash
+cd host
+npm install
+npm run build
+npm start -- --sigfox /dev/ttyACM0     # 変更のたびに再起動するなら `npm run dev`
+```
+
+```bash
+scripts/check     # CI と同じ検査: install・型検査・テスト・ビルド
 (cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

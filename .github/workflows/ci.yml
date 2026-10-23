@@ -5,11 +5,19 @@ on:
   pull_request:
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is best effort and has no job (#25)
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: sudo apt-get install -y socat
+      # The pty tests need socat; they are skipped where it is missing (Windows)
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y socat
       - run: scripts/check
+        shell: bash
