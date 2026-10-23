@@ -44,7 +44,7 @@ in the message list. The web UI is in English; a Japanese translation can be sel
 
 If you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
 
-Data is stored in `~/.local/share/opennek/`.
+Data is stored in `~/.local/share/opennek/` (Windows: `%APPDATA%\opennek\`, macOS: `~/Library/Application Support/opennek/`).
 
 ### Uplink authentication
 

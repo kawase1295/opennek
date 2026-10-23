@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util'
 import { serve } from '@hono/node-server'
 import { Settings, Store } from './db'
 import { Engine } from './engine'
+import { browserCommand, defaultDataDir } from './platform'
 import { SigfoxRadio } from './radio'
 import { createApp } from './server'
 import { VERSION } from './version'
@@ -18,7 +19,8 @@ Usage: opennek [options]
   --host <addr>       Address to listen on (default 127.0.0.1)
   --sigfox <path>     Port of the RSSI streamer that receives real Sigfox (RC3); off to disable (default: the saved setting)
   --sigfox-freq <hz>  Sigfox receive frequency (default 923200000)
-  --data <dir>        Data directory (default $XDG_DATA_HOME/opennek)
+  --data <dir>        Data directory (default: $XDG_DATA_HOME/opennek, %APPDATA%\\opennek on Windows,
+                      ~/Library/Application Support/opennek on macOS)
   --open              Open the UI in a browser after starting
   -v, --version       Print the version
   -h, --help          Print this help
@@ -46,7 +48,7 @@ if (args.version) {
   process.exit(0)
 }
 
-const dataDir = args.data ?? join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'opennek')
+const dataDir = args.data ?? defaultDataDir(process.platform, process.env, homedir())
 mkdirSync(dataDir, { recursive: true })
 const store = new Store(join(dataDir, 'opennek.db'))
 if (args.sigfox) store.saveSettings({ ...store.getSettings(), sigfoxPort: args.sigfox === 'off' ? '' : args.sigfox })
@@ -87,7 +89,10 @@ const app = createApp(engine)
 const server = serve({ port: Number(args.port), hostname: args.host, fetch: app.fetch }, (info) => {
   const url = `http://${args.host === '0.0.0.0' ? 'localhost' : args.host}:${info.port}/`
   console.log(`OpenNEK ${VERSION} — ${url}  data: ${dataDir}`)
-  if (args.open) spawn('xdg-open', [url], { stdio: 'ignore', detached: true }).on('error', () => {}).unref()
+  if (args.open) {
+    const [cmd, cmdArgs] = browserCommand(process.platform, url)
+    spawn(cmd, cmdArgs, { stdio: 'ignore', detached: true, windowsHide: true }).on('error', () => {}).unref()
+  }
 })
 sigfox.start()
 
