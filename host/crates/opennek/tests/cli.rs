@@ -52,3 +52,14 @@ mod options {
         );
     }
 }
+
+#[test]
+fn install_is_a_subcommand() {
+    use clap::Parser;
+    use opennek::cli::{Args, Command};
+    let a = Args::try_parse_from(["opennek", "install"]).unwrap();
+    assert!(matches!(a.command, Some(Command::Install)));
+    let a = Args::try_parse_from(["opennek", "uninstall"]).unwrap();
+    assert!(matches!(a.command, Some(Command::Uninstall)));
+    assert!(Args::try_parse_from(["opennek"]).unwrap().command.is_none());
+}
