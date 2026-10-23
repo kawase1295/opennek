@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Checks that must pass before merging. CI runs this same script.
 set -euo pipefail
-cd "$(dirname "$0")/../host"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+
+# TypeScript host, until the Rust host replaces it (#35)
+cd "$root/host"
 npm ci
 npm run typecheck
 npm test
 npm run build
+
+# Rust host; rust-toolchain.toml makes rustup install the pinned toolchain
+cd "$root/host-rs"
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
