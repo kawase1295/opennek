@@ -2,22 +2,23 @@
 
 **English** | [日本語](README.ja.md)
 
-A **local network for real Sigfox devices** (RC3, Japan) that runs on a PC with a USB radio receiver.
+A **local network for real Sigfox devices** (RC3, Japan) that runs on a PC. A Seeed Studio
+**XIAO ESP32S3 & Wio-SX1262 kit** works as the radio, in place of an SDR dongle.
 Uplinks from your devices show up in a web UI, are forwarded to your own application through
 Sigfox-compatible HTTP callbacks, and can be answered with 8-byte downlinks.
 Develop and test Sigfox applications on your desk, without a backend subscription.
 
 ```
-┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────┐  USB serial  ┌───────────────────────┐  HTTP   ┌──────────┐
-│ Sigfox device │ ─ uplink ×3 ───────────▶ │ Receiver │ ───────────▶ │ opennek (Bun + Hono)  │ ──────▶ │ Your     │
-│               │ ◀──── downlink (922 MHz) │          │ ◀─────────── │ Web UI / SQLite       │ ◀────── │ app      │
-└──────────────┘                            └──────────┘              └───────────────────────┘         └──────────┘
+┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB serial  ┌───────────────────────┐  HTTP   ┌──────────┐
+│ Sigfox device │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Bun + Hono)  │ ──────▶ │ Your     │
+│               │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ app      │
+└──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | Part | Contents |
 |---|---|
 | `host/` | Host server. Bun + Hono + bun:sqlite. Sigfox decoder, web UI, callbacks, downlinks |
-| `firmware/` | PlatformIO (Arduino) firmware for the ESP32-S3 side of the receiver: USB bridge and standalone tester |
+| `firmware/` | PlatformIO (Arduino) firmware. `radio-xiao-sx1262` = the radio: streams RSSI from the Wio-SX1262 to the host and sends downlinks |
 | `docs/protocol.md` | Callback and downlink specification |
 | `packaging/build-deb.sh` | Builds a `.deb` for Ubuntu |
 
@@ -25,13 +26,19 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
 
 ## Getting started
 
-```bash
-cd host
-bun install
-bun run start -- --sigfox /dev/ttyACM0    # the receiver's serial port
-```
+1. Plug the XIAO ESP32S3 onto the Wio-SX1262 and attach the antenna that comes with the kit.
+2. Flash the radio firmware:
+   ```bash
+   cd firmware && pio run -e radio-xiao-sx1262 -t upload
+   ```
+3. Start the host with the kit's serial port:
+   ```bash
+   cd host
+   bun install
+   bun run start -- --sigfox /dev/ttyACM0
+   ```
 
-Open <http://127.0.0.1:8085/>. The port is remembered; you can also pick it under
+Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
 **Settings → Sigfox receiver (RC3)**. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
@@ -58,12 +65,28 @@ Anyone can sign with the public key, so it only shows that the frame is consiste
 
 ### Downlinks
 
-Turn on **Settings → Send downlinks from the receiver**. The receiver then answers every authenticated
-uplink that requests a downlink (`AT$SF=…,1`) inside the device's receive window, and the device prints `RX=…`.
-The confirmation frame the device sends afterwards marks the downlink as acknowledged.
+Turn on **Settings → Send downlinks from the receiver**. The kit then answers every authenticated uplink
+that requests a downlink (`AT$SF=…,1`) with the device's static data or the callback's `downlinkData`, and the
+device prints `RX=…`.
 
-> **Radio regulations**: downlinks transmit on the 920 MHz band. Turn this on only when the receiver meets
-> your local regulations (in Japan: 技適 certification, used within its certified conditions).
+- The kit measures the frequency of uplink frame 1 and transmits on frame 1 − 1 MHz (922.1–922.3 MHz),
+  21 s after the end of frame 1, inside the device's RC3 receive window.
+- The frame is GFSK 600 bps. Its authentication value is computed with the registered key or the public key.
+- The confirmation frame the device sends after `RX=` marks the downlink as acknowledged.
+
+The firmware refuses anything outside these limits, whatever the host asks:
+
+| Limit | Value |
+|---|---|
+| Transmitting | only while the host allows it; off after every reset |
+| Frequency | 922.1–922.3 MHz (the 922.2 MHz unit channel) |
+| Power | 10 dBm (10 mW) |
+| Carrier sense | −80 dBm for 5 ms before every frame |
+| Pause / hourly budget | 100 ms between transmissions, 360 s on air per hour |
+
+> **Radio regulations**: downlinks transmit on the 920 MHz band. Turn this on only when the kit meets
+> your local regulations (in Japan: 技適 certification, used with its certified antenna and within its
+> certified conditions). Check the limits above against them.
 
 ## Callbacks
 
@@ -85,7 +108,7 @@ variables as Sigfox custom callbacks (`{device}` `{time}` `{data}` `{seqNumber}`
 ## Using it on WSL2
 
 WSL cannot see USB devices by default. Use [usbipd-win](https://github.com/dorssel/usbipd-win) on Windows
-to attach the receiver to WSL (run in an elevated PowerShell):
+to attach the kit to WSL (run in an elevated PowerShell):
 
 ```powershell
 usbipd list
