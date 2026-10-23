@@ -21,8 +21,7 @@
         <button data-tab="settings" data-i18n="nav.settings">Settings</button>
       </nav>
       <div class="pills">
-        <div id="gw" class="pill" title="Gateway" data-i18n-title="pill.gateway">—</div>
-        <div id="radio" class="pill hidden" title="Sigfox receiver" data-i18n-title="pill.radio">—</div>
+        <div id="radio" class="pill" title="Sigfox receiver" data-i18n-title="pill.radio">—</div>
         <select id="lang" class="lang" aria-label="Language"></select>
       </div>
     </header>
@@ -30,16 +29,6 @@
     <main>
       <!-- メッセージ -->
       <section id="tab-messages" class="tab active">
-        <div id="sim" class="card sim hidden">
-          <h3 data-i18n="sim.title">Simulator</h3>
-          <form id="sim-form" class="row">
-            <label><span data-i18n="sim.deviceId">Device ID</span><input name="deviceId" value="F0000001" maxlength="8" pattern="[0-9A-Fa-f]{8}" required /></label>
-            <label class="grow"><span data-i18n="sim.data">Data (hex, up to 12 bytes)</span><input name="data" value="0102030405" maxlength="24" pattern="([0-9A-Fa-f]{2}){0,12}" /></label>
-            <label class="check"><input type="checkbox" name="ack" /><span data-i18n="sim.ack">Request downlink</span></label>
-            <button class="primary" data-i18n="sim.send">Send</button>
-          </form>
-          <div id="sim-result" class="muted"></div>
-        </div>
         <div class="toolbar">
           <select id="msg-device"><option value="" data-i18n="msg.allDevices">All devices</option></select>
           <span class="spacer"></span>
@@ -50,7 +39,7 @@
           <table id="msg-table">
             <thead>
               <tr>
-                <th data-i18n="msg.time">Time</th><th data-i18n="msg.radio">Radio</th><th data-i18n="msg.device">Device</th><th>Seq</th><th data-i18n="msg.data">Data</th>
+                <th data-i18n="msg.time">Time</th><th data-i18n="msg.device">Device</th><th>Seq</th><th data-i18n="msg.data">Data</th>
                 <th>RSSI</th><th data-i18n="msg.frames">Frames</th><th data-i18n="msg.auth">Auth</th><th data-i18n="msg.downlink">Downlink</th>
               </tr>
             </thead>
@@ -64,7 +53,7 @@
       <!-- デバイス -->
       <section id="tab-devices" class="tab">
         <div class="toolbar">
-          <span class="muted" data-i18n="dev.intro">Devices are added to the list when they are first received. Register a key (the value of AT$PAC) to enable authentication and downlinks.</span>
+          <span class="muted" data-i18n="dev.intro">Devices are added to the list when they are first received. Register the device key to verify its uplinks and send downlinks.</span>
           <span class="spacer"></span>
           <button id="dev-add" class="primary" data-i18n="common.add">Add</button>
         </div>
@@ -108,20 +97,11 @@
       <!-- 設定 -->
       <section id="tab-settings" class="tab">
         <div class="card">
-          <h3 data-i18n="set.gateway">Gateway</h3>
-          <dl id="gw-detail" class="kv"></dl>
-        </div>
-        <div class="card">
           <h3 data-i18n="set.radio">Sigfox receiver</h3>
           <dl id="radio-detail" class="kv"></dl>
         </div>
         <form id="settings-form" class="card form">
-          <h3 data-i18n="set.host">Radio and host</h3>
-          <label><span data-i18n="set.serialPort">Serial port</span><select name="serialPort"></select></label>
-          <label><span data-i18n="set.channel">Channel (1–13)</span><input name="channel" type="number" min="1" max="13" required />
-            <small data-i18n="set.channelHint">Put the gateway and all devices (AT$CH=n) on the same channel.</small></label>
-          <label><span data-i18n="set.dedup">Deduplication window (ms)</span><input name="dedupWindowMs" type="number" min="50" max="5000" required />
-            <small data-i18n="set.dedupHint">How long to wait after the first frame to merge the 3 repetitions.</small></label>
+          <h3 data-i18n="set.host">Host</h3>
           <label><span data-i18n="set.timeout">Downlink / callback timeout (ms)</span><input name="downlinkTimeoutMs" type="number" min="500" max="30000" required /></label>
           <label class="check"><input type="checkbox" name="acceptUnknownDevices" /><span data-i18n="set.acceptUnknown">Run callbacks for devices without a registered key</span></label>
           <h3 data-i18n="set.sigfox">Sigfox receiver (RC3)</h3>
@@ -141,7 +121,7 @@
         <h3 data-i18n="devForm.title">Device</h3>
         <label><span data-i18n="devForm.id">ID (8 hex digits)</span><input name="id" maxlength="8" pattern="[0-9A-Fa-f]{8}" required /></label>
         <label><span data-i18n="devForm.name">Name</span><input name="name" maxlength="64" /></label>
-        <label><span data-i18n="devForm.key">Key (the 32 hex digits of AT$PAC)</span><input name="key" maxlength="32" pattern="[0-9A-Fa-f]{32}" placeholder="Not registered" data-i18n-placeholder="devForm.keyPlaceholder" /></label>
+        <label><span data-i18n="devForm.key">Key (32 hex digits)</span><input name="key" maxlength="32" pattern="[0-9A-Fa-f]{32}" placeholder="Not registered" data-i18n-placeholder="devForm.keyPlaceholder" /></label>
         <label><span data-i18n="devForm.payload">Payload format</span>
           <input name="payloadConfig" placeholder="temp::int:16:little-endian hum::uint:8 door:0:bool:7" />
           <small data-i18n="devForm.payloadHint">Space-separated name:offset:type:args. Types are uint / int / float / bool / char. Decoded values are available as {customData#name}.</small></label>

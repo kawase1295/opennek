@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/db'
 import { Engine, type EngineEvent } from '../src/engine'
-import { SimGateway } from '../src/gateway/sim'
-import { type SigfoxDownlinkTx, SigfoxRadio } from '../src/gateway/sigfox'
+import { type SigfoxDownlinkTx, SigfoxRadio } from '../src/radio'
 import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'
 import { encodeDownlink, RC3_DL_T_RX_MS, RC3_DL_T_W_MS } from '../src/sigfox/downlink'
 
@@ -39,7 +38,7 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
     downlink: false,
   })
   const radio = new SigfoxRadio(() => ({ port: '', freq: 923_200_000 }))
-  const engine = new Engine(store, new SimGateway(), radio)
+  const engine = new Engine(store, radio)
   const events: EngineEvent[] = []
   engine.on((e) => events.push(e))
   const radioMessages: { receivedAt: number; firstFrameEndAt: number | null; ranks: number[] }[] = []
@@ -51,11 +50,11 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
   server.stop(true)
 
   const messages = store.listMessages().reverse()
-  expect(messages.map((m) => [m.seq, m.data, m.ack, m.radio, m.auth])).toEqual([
+  expect(messages.map((m) => [m.seq, m.data, m.ack, m.auth])).toEqual([
     // the device uses its private key, which the host does not know
-    [1982, '1234567890', false, 'sigfox', 'unverified'],
-    [1983, '11', false, 'sigfox', 'unverified'],
-    [1984, '11', true, 'sigfox', 'unverified'],
+    [1982, '1234567890', false, 'unverified'],
+    [1983, '11', false, 'unverified'],
+    [1984, '11', true, 'unverified'],
   ])
   for (const m of messages) {
     expect(m.deviceId).toBe('00763DA3')
@@ -87,7 +86,7 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
 
 test('a late repetition does not create a second message', () => {
   const store = new Store(':memory:')
-  const engine = new Engine(store, new SimGateway())
+  const engine = new Engine(store)
   const m = {
     deviceId: '00763DA3', counter: 7, payload: new Uint8Array([0x11]), bit: null, downlink: false, control: false, auth: new Uint8Array(2),
     time: 0, rssi: -80.5, ranks: [0, 1], frames: [], clockErrorPpm: 0, receivedAt: Date.now(), firstFrameEnd: null, firstFrameEndAt: null, uplinkFreqHz: null,
@@ -95,7 +94,7 @@ test('a late repetition does not create a second message', () => {
   engine.handleSigfox(m)
   engine.handleSigfox({ ...m, ranks: [2] })
   expect(store.listMessages()).toHaveLength(1)
-  expect(store.listMessages()[0]).toMatchObject({ seq: 7, rssi: -80, nbFrames: 2, radio: 'sigfox' })
+  expect(store.listMessages()[0]).toMatchObject({ seq: 7, rssi: -80, nbFrames: 2 })
 })
 
 describe('authentication of real Sigfox uplinks', () => {
@@ -108,7 +107,7 @@ describe('authentication of real Sigfox uplinks', () => {
     const store = new Store(':memory:')
     store.saveSettings({ ...store.getSettings(), acceptUnknownDevices })
     if (key) store.upsertDevice({ id: '0A1B2C3D', name: '', key, downlinkMode: 'none', downlinkData: '', payloadConfig: '' })
-    return { store, engine: new Engine(store, new SimGateway()) }
+    return { store, engine: new Engine(store) }
   }
   const lastAuth = (store: Store) => store.listMessages()[0]!.auth
 
@@ -172,7 +171,7 @@ describe('downlinks to real Sigfox devices', () => {
     store.upsertDevice({ id: '0A1B2C3D', name: '', key: opts.key ?? '', downlinkMode: 'static', downlinkData: '0102030405060708', payloadConfig: '' })
     const sent: SigfoxDownlinkTx[] = []
     const tx = { transmit: async (t: SigfoxDownlinkTx) => (sent.push(t), opts.result ?? true) }
-    const engine = new Engine(store, new SimGateway(), null, tx)
+    const engine = new Engine(store, null, tx)
     const lines: string[] = []
     engine.on((e) => e.type === 'console' && lines.push(e.line))
     return { store, engine, sent, lines }
@@ -246,7 +245,7 @@ describe('downlinks to real Sigfox devices', () => {
   })
 })
 
-test('an existing database gains the radio column', () => {
+test('an existing database loses the ESP-NOW messages and their columns', () => {
   const path = join(mkdtempSync(join(tmpdir(), 'opennek-')), 'old.db')
   const { Database } = require('bun:sqlite')
   const old = new Database(path, { create: true })
@@ -254,12 +253,29 @@ test('an existing database gains the radio column', () => {
     id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL,
     data TEXT NOT NULL, ack INTEGER NOT NULL, oob INTEGER NOT NULL, rssi INTEGER NOT NULL, nb_frames INTEGER NOT NULL,
     auth TEXT NOT NULL, src TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
-    downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none')`)
-  old.run(`INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, src, station)
-    VALUES ('F0000001', 1, 1, '01', 0, 0, -50, 3, 'ok', '02:00:00:00:00:01', '0001')`)
+    downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none', radio TEXT NOT NULL DEFAULT 'espnow')`)
+  old.run(`CREATE TABLE callback_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, callback_id INTEGER NOT NULL, message_id INTEGER NOT NULL, time INTEGER NOT NULL,
+    status INTEGER, ok INTEGER NOT NULL, error TEXT, duration_ms INTEGER NOT NULL, response TEXT)`)
+  old.run(`INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, src, station, radio) VALUES
+    ('F0000001', 1, 1, '01', 0, 0, -50, 3, 'ok', '02:00:00:00:00:01', '0001', 'espnow'),
+    ('00763DA3', 2, 7, '02', 0, 0, -80, 3, 'unverified', 'sigfox', '0000', 'sigfox')`)
+  old.run(`INSERT INTO callback_logs (callback_id, message_id, time, ok, duration_ms) VALUES (1, 1, 1, 1, 5), (1, 2, 2, 1, 5)`)
   old.close()
+
   const store = new Store(path)
-  expect(store.listMessages()[0]).toMatchObject({ deviceId: 'F0000001', radio: 'espnow' })
+  expect(store.listMessages()).toEqual([
+    expect.objectContaining({ deviceId: '00763DA3', seq: 7, station: '0000' }),
+  ])
+  expect(store.listMessages()[0]).not.toContainKey('radio')
+  expect(store.listMessages()[0]).not.toContainKey('src')
+  expect(store.listLogs().map((l) => l.messageId)).toEqual([2])
+  // inserting works on the migrated table
+  store.insertMessage({
+    deviceId: '00763DA3', time: 3, seq: 8, data: '', ack: false, oob: false, rssi: -80, nbFrames: 3, auth: 'unverified',
+    station: '0000', decoded: null, downlink: null, downlinkStatus: 'none',
+  })
+  expect(store.listMessages()).toHaveLength(2)
   store.db.close()
 })
 
@@ -288,7 +304,7 @@ test.skipIf(!hasSocat)('Sigfox receiver over a serial line', async () => {
 
   const store = new Store(':memory:')
   const radio = new SigfoxRadio(() => ({ port: hostPath, freq: 923_100_000 }))
-  new Engine(store, new SimGateway(), radio)
+  new Engine(store, radio)
   radio.start()
   for (let i = 0; i < 100 && commands.length < 3; i++) await settle(20)
   // The host tunes the streamer, turns on the CFO lines and asks for its status

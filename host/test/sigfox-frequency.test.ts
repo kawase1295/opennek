@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { type RadioMessage, SigfoxRadio } from '../src/gateway/sigfox'
+import { type RadioMessage, SigfoxRadio } from '../src/radio'
 import { CFO_SCALE, cfoSigned, cfoStepHz, FrequencyTracker } from '../src/sigfox/frequency'
 import { SigfoxReceiver } from '../src/sigfox/receiver'
 

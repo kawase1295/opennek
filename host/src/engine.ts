@@ -1,26 +1,21 @@
 import { appliesTo, runCallback } from './callbacks'
-import type { Auth, CallbackLog, Device, Message, Radio, Store } from './db'
+import type { Auth, CallbackLog, Device, Message, Store } from './db'
 import { renderDownlink } from './downlink'
-import { decodeFrame, encodeFrame, fromHex, toHex, TYPE_DOWNLINK, TYPE_UPLINK, verifyMac, type Frame } from './frame'
-import type { Gateway, GatewayStatus, Uplink } from './gateway/gateway'
-import type { RadioMessage, RadioStatus, SigfoxRadio, SigfoxTransmitter } from './gateway/sigfox'
+import { fromHex, toHex } from './hex'
 import { decodePayload } from './payload'
+import type { RadioMessage, RadioStatus, SigfoxRadio, SigfoxTransmitter } from './radio'
 import { PUBLIC_KEY, verifyUplink } from './sigfox/auth'
 import { decodeControl } from './sigfox/frame'
 import { downlinkFrequency, downlinkWindow, encodeDownlink } from './sigfox/downlink'
 
 export type EngineEvent =
   | { type: 'message'; message: Message }
-  | { type: 'gateway'; status: GatewayStatus }
   | { type: 'radio'; status: RadioStatus }
   | { type: 'callbackLog'; log: CallbackLog }
   | { type: 'console'; line: string; time: number }
 
-type Pending = { frame: Frame; src: string; station: string; rssi: number; nbFrames: number; auth: Auth; time: number }
-
-// 受信経路によらない、まとめ終わったアップリンク
+// 受信機がまとめ終わったアップリンク
 type Incoming = {
-  radio: Radio
   deviceId: string
   seq: number
   payload: Uint8Array
@@ -29,35 +24,27 @@ type Incoming = {
   rssi: number
   nbFrames: number
   auth: Auth
-  src: string
   station: string
   time: number
-  // 本物の Sigfox のダウンリンクに必要な、フレーム 1 の終了時刻と周波数
+  // ダウンリンクに必要な、フレーム 1 の終了時刻と周波数
   firstFrameEndAt: number | null
   uplinkFreqHz: number | null
 }
 
-// 同じ (デバイス, seq) の遅れて届いた repeat を無視する期間
-const RECENT_MS = 10_000
-// Sigfox はメッセージの最後の repeat から 10 秒待ってまとめるので、それより遅れた repeat を無視する期間
-const SIGFOX_RECENT_MS = 60_000
-// 本物の Sigfox を受けたときの station 変数 (Sigfox の基地局 ID の代わり)
-const SIGFOX_STATION = '0000'
+// 受信機はメッセージの最後の repeat から 10 秒待ってまとめるので、それより遅れた repeat を無視する期間
+const RECENT_MS = 60_000
+// station 変数 (Sigfox の基地局 ID の代わり)
+const STATION = '0000'
 
 export class Engine {
-  private pending = new Map<string, Pending>()
   private recent = new Map<string, number>()
   private listeners: ((e: EngineEvent) => void)[] = []
 
   constructor(
     readonly store: Store,
-    readonly gateway: Gateway,
     readonly sigfox: SigfoxRadio | null = null,
     readonly sigfoxTx: SigfoxTransmitter | null = null,
   ) {
-    gateway.onUplink((u) => this.handleUplink(u))
-    gateway.onStatus((status) => this.emit({ type: 'gateway', status }))
-    gateway.onLog((line) => this.console(line))
     sigfox?.onMessage((m) => this.handleSigfox(m))
     sigfox?.onStatus((status) => this.emit({ type: 'radio', status }))
     sigfox?.onLog((line) => this.console(line))
@@ -78,63 +65,25 @@ export class Engine {
     this.emit({ type: 'console', line, time: Date.now() })
   }
 
-  handleUplink(u: Uplink) {
-    let frame: Frame
-    try {
-      frame = decodeFrame(u.frame)
-    } catch (e) {
-      return this.console(`drop frame from ${u.src}: ${(e as Error).message}`)
-    }
-    if (frame.type !== TYPE_UPLINK) return
-    const key = `${frame.deviceId}:${frame.seq}:${toHex(frame.mac)}`
+  // repeat は受信機側でまとめ済み
+  handleSigfox(m: RadioMessage) {
+    const key = `${m.deviceId}:${m.counter}`
     const now = Date.now()
     for (const [k, t] of this.recent) if (now - t > RECENT_MS) this.recent.delete(k)
-    if (this.recent.has(key)) return
-
-    const p = this.pending.get(key)
-    if (p) {
-      p.nbFrames++
-      p.rssi = Math.max(p.rssi, u.rssi)
-      return
-    }
-    const device = this.store.getDevice(frame.deviceId)
-    const auth: Auth = device?.key ? (verifyMac(fromHex(device.key), frame) ? 'ok' : 'bad') : 'unknown'
-    this.pending.set(key, { frame, src: u.src, station: u.station, rssi: u.rssi, nbFrames: 1, auth, time: now })
-    setTimeout(() => {
-      const p = this.pending.get(key)!
-      this.pending.delete(key)
-      this.recent.set(key, Date.now())
-      const f = p.frame
-      const incoming: Incoming = {
-        radio: 'espnow', deviceId: f.deviceId, seq: f.seq, payload: f.payload, ack: f.ack, oob: f.oob,
-        rssi: p.rssi, nbFrames: p.nbFrames, auth: p.auth, src: p.src, station: p.station, time: p.time,
-        firstFrameEndAt: null, uplinkFreqHz: null,
-      }
-      void this.finalize(incoming).catch((e) => this.console(`error: ${(e as Error).stack ?? e}`))
-    }, this.store.getSettings().dedupWindowMs)
-  }
-
-  // 本物の Sigfox アップリンク。repeat は受信機側でまとめ済み
-  handleSigfox(m: RadioMessage) {
-    const key = `sigfox:${m.deviceId}:${m.counter}`
-    const now = Date.now()
-    for (const [k, t] of this.recent) if (now - t > Math.max(RECENT_MS, SIGFOX_RECENT_MS)) this.recent.delete(k)
     if (this.recent.has(key)) return this.console(`sigfox: late repetition of ${m.deviceId} seq=${m.counter} ignored`)
     this.recent.set(key, now)
     const incoming: Incoming = {
-      radio: 'sigfox',
       deviceId: m.deviceId,
       seq: m.counter,
       // 1 ビットメッセージ (AT$SB) はデータ無し。値は Sigfox と同じく data に入れない
       payload: m.payload,
       ack: m.downlink,
-      // keep-alive and downlink confirmation, like the OOB frames of OpenNEK devices
+      // keep-alive and downlink confirmation
       oob: m.control,
       rssi: Math.round(m.rssi),
       nbFrames: m.ranks.length,
       auth: this.sigfoxAuth(m),
-      src: 'sigfox',
-      station: SIGFOX_STATION,
+      station: STATION,
       time: m.receivedAt,
       firstFrameEndAt: m.firstFrameEndAt,
       uplinkFreqHz: m.uplinkFreqHz,
@@ -158,7 +107,7 @@ export class Engine {
     this.store.touchDevice(f.deviceId, f.seq, f.time)
 
     let decoded: Record<string, unknown> | null = null
-    const control = f.radio === 'sigfox' && f.oob ? decodeControl(f.payload) : null
+    const control = f.oob ? decodeControl(f.payload) : null
     if (control) {
       decoded = control
     } else if (device.payloadConfig && f.payload.length) {
@@ -168,7 +117,7 @@ export class Engine {
         decoded = { _error: (e as Error).message }
       }
     }
-    let message = this.store.insertMessage({
+    const message = this.store.insertMessage({
       deviceId: f.deviceId,
       time: f.time,
       seq: f.seq,
@@ -178,9 +127,7 @@ export class Engine {
       rssi: f.rssi,
       nbFrames: f.nbFrames,
       auth: f.auth,
-      src: f.src,
       station: f.station,
-      radio: f.radio,
       decoded,
       downlink: null,
       downlinkStatus: f.ack ? 'pending' : 'none',
@@ -213,28 +160,17 @@ export class Engine {
     let data: string | null = null
     if (device.downlinkMode === 'static' && device.downlinkData) data = renderDownlink(device.downlinkData, f)
     if (device.downlinkMode === 'callback') data = results.find((r) => r.downlink)?.downlink ?? null
-    if (f.radio === 'sigfox') {
-      // 公開鍵モードのデバイスには公開鍵で認証値を付ける。未登録デバイスを受け付けない設定ならコールバックと同じく送らない
-      const key = f.auth === 'ok' ? fromHex(device.key) : f.auth === 'public' && trusted ? PUBLIC_KEY : null
-      return this.sigfoxDownlink(f, message, data, key)
-    }
-    if (!data || !device.key || f.auth !== 'ok') {
-      if (data && !device.key) this.console(`downlink for ${f.deviceId} skipped: device key not registered`)
-      message = this.store.updateMessage(message.id, { downlinkStatus: 'nodata' })!
-      return this.emit({ type: 'message', message })
-    }
-    const frame = encodeFrame({ type: TYPE_DOWNLINK, deviceId: f.deviceId, seq: f.seq, payload: fromHex(data), key: fromHex(device.key) })
-    const ok = await this.gateway.sendDownlink(f.src, frame)
-    message = this.store.updateMessage(message.id, { downlink: data, downlinkStatus: ok ? 'sent' : 'failed' })!
-    this.emit({ type: 'message', message })
+    // 公開鍵モードのデバイスには公開鍵で認証値を付ける。未登録デバイスを受け付けない設定ならコールバックと同じく送らない
+    const key = f.auth === 'ok' ? fromHex(device.key) : f.auth === 'public' && trusted ? PUBLIC_KEY : null
+    return this.sigfoxDownlink(f, message, data, key)
   }
 
-  // 本物の Sigfox デバイスはダウンリンクを受け取ると、次のカウンタで確認の制御メッセージを送る
+  // Sigfox デバイスはダウンリンクを受け取ると、次のカウンタで確認の制御メッセージを送る
   private confirmDownlink(f: Incoming) {
     const seq = (f.seq + 0xfff) & 0xfff
     const sent = this.store
       .listMessages({ deviceId: f.deviceId, limit: 20 })
-      .find((m) => m.radio === 'sigfox' && m.seq === seq && m.downlinkStatus === 'sent')
+      .find((m) => m.seq === seq && m.downlinkStatus === 'sent')
     if (!sent) return
     this.emit({ type: 'message', message: this.store.updateMessage(sent.id, { downlinkStatus: 'acked' })! })
   }

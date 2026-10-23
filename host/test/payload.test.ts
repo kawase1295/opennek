@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { fromHex } from '../src/frame'
+import { fromHex } from '../src/hex'
 import { decodePayload, parsePayloadConfig } from '../src/payload'
 
 test('sequential fields with endianness, bits and bool', () => {

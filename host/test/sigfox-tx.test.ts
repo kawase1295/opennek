@@ -2,7 +2,7 @@ import { afterAll, expect, test } from 'bun:test'
 import { constants, createReadStream, existsSync, mkdtempSync, openSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SigfoxRadio } from '../src/gateway/sigfox'
+import { SigfoxRadio } from '../src/radio'
 
 // A fake streamer on one side of a pty pair answers like firmware-lsm100a 0.3.0; SigfoxRadio drives the other side
 const hasSocat = Bun.which('socat') !== null

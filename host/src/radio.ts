@@ -1,6 +1,6 @@
-import { toHex } from '../frame'
-import { FrequencyTracker } from '../sigfox/frequency'
-import { type SigfoxMessage, SigfoxReceiver } from '../sigfox/receiver'
+import { toHex } from './hex'
+import { FrequencyTracker } from './sigfox/frequency'
+import { type SigfoxMessage, SigfoxReceiver } from './sigfox/receiver'
 import { type LinePort, openLinePort } from './serial'
 
 // Real Sigfox RC3 uplinks from the OpenNEK RSSI streamer (firmware-lsm100a, usually behind the ESP32-S3

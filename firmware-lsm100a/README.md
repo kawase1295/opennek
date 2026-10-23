@@ -66,15 +66,14 @@ flag decode with a valid CRC; the LSM100A's RC clock runs about 1.3 % slow and i
 
 ## Receive in the OpenNEK host
 
-The host can run the same decoder next to the ESP-NOW gateway. Real Sigfox messages then appear in the
-Web UI (marked "Sigfox"), in the device list, and trigger the Sigfox-compatible callbacks:
+The host runs the same decoder. Real Sigfox messages then appear in the Web UI and the device list, and
+trigger the Sigfox-compatible callbacks:
 
 ```bash
 cd host && bun src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 ```
 
-The port is remembered; pick it (or "使わない" to turn the receiver off) under Settings → Sigfox 受信機.
-An auto-detected ESP-NOW gateway never takes the receiver's port.
+The port is remembered; pick it (or "Don't use" to turn the receiver off) under Settings → Sigfox receiver (RC3).
 
 ### Downlinks (firmware 0.3.0, transmits)
 

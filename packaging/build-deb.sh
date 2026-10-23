@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# OpenNEK の .deb を作る: ホスト (単一バイナリ) + ファームウェア (書き込み用の統合 .bin)
+# OpenNEK の .deb を作る: ホスト (単一バイナリ)
 #   ./packaging/build-deb.sh            → dist/opennek_<ver>_amd64.deb
-#   SKIP_FIRMWARE=1 ./packaging/build-deb.sh  ファームを含めない
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -9,34 +8,16 @@ VERSION=$(sed -n "s/.*VERSION = '\(.*\)'.*/\1/p" "$ROOT/host/src/version.ts")
 OUT="$ROOT/dist"
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
-PIO=${PIO:-$(command -v pio || echo "$HOME/.platformio/penv/bin/pio")}
-ESPTOOL="$HOME/.platformio/packages/tool-esptoolpy/esptool.py"
-PIO_PY="$HOME/.platformio/penv/bin/python"
 
 echo "==> host"
 (cd "$ROOT/host" && bun install --frozen-lockfile >/dev/null && bun test && bun run build)
 install -Dm755 "$ROOT/host/dist/opennek" "$STAGE/usr/bin/opennek"
 
-if [[ -z "${SKIP_FIRMWARE:-}" ]]; then
-  echo "==> firmware"
-  (cd "$ROOT/firmware" && "$PIO" run -e gateway -e device -e gateway-s3 -e device-s3)
-  FWDIR="$STAGE/usr/share/opennek/firmware"
-  mkdir -p "$FWDIR"
-  for env in gateway device gateway-s3 device-s3; do
-    B="$ROOT/firmware/.pio/build/$env"
-    if [[ $env == *-s3 ]]; then chip=esp32s3 boot=0x0; else chip=esp32 boot=0x1000; fi
-    BOOT_APP0="$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
-    "$PIO_PY" "$ESPTOOL" --chip $chip merge_bin -o "$FWDIR/opennek-$env-$VERSION.bin" \
-      $boot "$B/bootloader.bin" 0x8000 "$B/partitions.bin" 0xe000 "$BOOT_APP0" 0x10000 "$B/firmware.bin" >/dev/null
-  done
-  cp "$ROOT/docs/flashing.md" "$ROOT/docs/flashing.ja.md" "$FWDIR/"
-fi
-
 install -Dm644 /dev/stdin "$STAGE/usr/share/applications/opennek.desktop" <<DESKTOP
 [Desktop Entry]
 Name=OpenNEK
-Comment=Open LPWAN network emulator built on ESP32
-Comment[ja]=ESP32 で作るオープンな LPWAN ネットワークエミュレータ
+Comment=Local network for real Sigfox devices
+Comment[ja]=本物の Sigfox デバイスのためのローカルネットワーク
 Exec=opennek --open
 Terminal=true
 Type=Application
@@ -45,7 +26,7 @@ DESKTOP
 
 install -Dm644 /dev/stdin "$STAGE/usr/lib/systemd/user/opennek.service" <<SERVICE
 [Unit]
-Description=OpenNEK network emulator
+Description=OpenNEK
 
 [Service]
 ExecStart=/usr/bin/opennek
@@ -69,8 +50,8 @@ Installed-Size: $(du -sk "$STAGE/usr" | cut -f1)
 Recommends: xdg-utils
 Section: net
 Priority: optional
-Description: Open LPWAN network emulator kit for ESP32
- Receives uplinks from ESP32 devices through an ESP32 USB gateway (ESP-NOW),
+Description: Local network for real Sigfox devices
+ Receives uplinks from real Sigfox (RC3) devices through a USB receiver,
  shows them in a web UI, forwards them to HTTP callbacks compatible with
  Sigfox custom callbacks and sends downlinks back.
 CONTROL
