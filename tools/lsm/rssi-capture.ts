@@ -6,8 +6,8 @@ import { parseArgs } from 'node:util'
 import { openPort } from './serial'
 
 // Same detector as the Sigfox decoder: well above the noise floor, at least 300 ms long
-export { type Burst, findBursts } from '../src/sigfox/demod'
-import { type Burst, findBursts } from '../src/sigfox/demod'
+export { type Burst, findBursts } from './sigfox/demod'
+import { type Burst, findBursts } from './sigfox/demod'
 import { isMain } from './main'
 
 export function plotHtml(dbm: Float32Array, rate: number, bursts: Burst[], meta: Record<string, unknown>) {

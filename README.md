@@ -10,14 +10,15 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
 
 ```
 ┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB serial  ┌───────────────────────┐  HTTP   ┌──────────┐
-│ Sigfox device │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Node + Hono) │ ──────▶ │ Your     │
+│ Sigfox device │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Rust)        │ ──────▶ │ Your     │
 │               │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ app      │
 └──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | Part | Contents |
 |---|---|
-| `host/` | Host server. Node.js + Hono + node:sqlite. Sigfox decoder, web UI, callbacks, downlinks |
+| `host/` | Host server, a single Rust executable (axum, SQLite). Sigfox decoder, web UI (`host/ui`, embedded), callbacks, downlinks |
+| `tools/lsm/` | Node tools for the LSM100A receiver: flashing its firmware through the bridge, RSSI/CFO captures |
 | `firmware/` | PlatformIO (Arduino) firmware. `radio-xiao-sx1262` = the radio: streams RSSI from the Wio-SX1262 to the host and sends downlinks |
 | `docs/protocol.md` | Callback and downlink specification |
 
@@ -133,27 +134,27 @@ The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 Run the host from source (needs [rustup](https://rustup.rs/); `rust-toolchain.toml` picks the Rust version):
 
 ```bash
-cd host-rs
+cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-The TypeScript host in `host/` is being replaced by the Rust one and still runs with
-`cd host && npm install && npm run build && npm start -- --sigfox /dev/ttyACM0`.
+The web UI in `host/ui` is plain JS without a build step and is embedded in the executable.
+The LSM100A tools in `tools/lsm` run on Node (`cd tools/lsm && npm install`); only firmware work needs them.
 
-Pushing a version tag (`v0.2.0`, equal to the version in `host-rs/Cargo.toml`) on main builds the executables and
+Pushing a version tag (`v0.2.0`, equal to the version in `host/Cargo.toml`) on main builds the executables and
 publishes them on GitHub Releases (`.github/workflows/release.yml`).
 
 ```bash
-scripts/check     # what CI runs: install, typecheck, test, build
-(cd host && npm test && npm run typecheck)
+scripts/check     # what CI runs: format, lint and test the host, test the UI strings and the LSM100A tools
+(cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
 ```
 
-The host tests decode recorded captures of real Sigfox devices end to end (uplink → callback → downlink) and
-talk to the receiver over a socat virtual serial port. The C++ decoder in the firmware is checked against the
-same captures.
+The host tests decode recorded captures of real Sigfox devices end to end (uplink → callback → downlink) through
+a fake receiver that replays the streamer's lines. The C++ decoder in the firmware is checked against the same
+captures.
 
 ## License
 

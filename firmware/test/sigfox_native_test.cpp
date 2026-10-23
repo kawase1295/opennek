@@ -1,8 +1,8 @@
 // Checks the C++ Sigfox decoder (lib/SigfoxRx) against the same vectors and real captures as
-// host/test/sigfox.test.ts. Run on the PC:
+// host/crates/sigfox/tests/demod.rs. Run on the PC:
 //   cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
 //     sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures
-// With --dump <file.rssi>, prints every frame and message instead (to compare with the TypeScript decoder).
+// With --dump <file.rssi>, prints every frame and message instead (to compare with the TypeScript decoder in tools/lsm).
 #include <stdio.h>
 #include <string.h>
 

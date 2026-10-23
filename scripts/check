@@ -3,15 +3,16 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
-# TypeScript host, until the Rust host replaces it (#35)
+# The host; rust-toolchain.toml makes rustup install the pinned toolchain
 cd "$root/host"
-npm ci
-npm run typecheck
-npm test
-npm run build
-
-# Rust host; rust-toolchain.toml makes rustup install the pinned toolchain
-cd "$root/host-rs"
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+# The web UI is plain JS embedded in the host
+node --test ui/i18n.test.mjs
+
+# The LSM100A tools (Node)
+cd "$root/tools/lsm"
+npm ci
+npm run typecheck
+npm test

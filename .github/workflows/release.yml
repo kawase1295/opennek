@@ -1,5 +1,5 @@
 name: release
-# A version tag (v0.2.0) pushed on main builds the host (host-rs/) for each OS and attaches the
+# A version tag (v0.2.0) pushed on main builds the host (host/) for each OS and attaches the
 # executables to a GitHub Release. Pull requests that change this file run the builds only, so
 # the cross builds are proven before a tag needs them.
 on:
@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
       - id: version
-        run: echo "version=$(sed -n 's/^version = "\(.*\)"$/\1/p' host-rs/Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"$/\1/p' host/Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
       - name: The tag is on main and matches the Cargo.toml version
         if: github.event_name == 'push'
         env:
@@ -35,7 +35,7 @@ jobs:
       - if: github.event_name == 'push'
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: host-rs
+          workspaces: host
       - if: github.event_name == 'push'
         run: sudo apt-get install -y socat
       - if: github.event_name == 'push'
@@ -81,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # rust-toolchain.toml pins the toolchain; install it before adding the target to it
-      - working-directory: host-rs
+      - working-directory: host
         run: |
           rustup toolchain install
           rustup target add ${{ matrix.target }}
@@ -89,13 +89,13 @@ jobs:
         run: sudo apt-get install -y musl-tools
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          workspaces: host-rs
+          workspaces: host
           key: ${{ matrix.target }}
-      - working-directory: host-rs
+      - working-directory: host
         run: cargo build --release --locked --package opennek --target ${{ matrix.target }}
       - run: |
           mkdir dist
-          cp "host-rs/target/${{ matrix.target }}/release/opennek${{ matrix.ext }}" "dist/$NAME"
+          cp "host/target/${{ matrix.target }}/release/opennek${{ matrix.ext }}" "dist/$NAME"
           ls -l dist
       - name: The Linux binary is static
         if: runner.os == 'Linux'

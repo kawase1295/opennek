@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the reference that produced the test vectors in host/test/sigfox-*.test.ts from sigfox-ep-lib.
+# Builds the reference that produced the test vectors in host/crates/sigfox/tests/{auth,downlink}.rs from sigfox-ep-lib.
 #   tools/sigfox-ep-oracle/build.sh /path/to/sigfox-ep-lib    (git clone https://github.com/sigfox-tech-radio/sigfox-ep-lib)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"

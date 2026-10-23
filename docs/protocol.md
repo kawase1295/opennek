@@ -6,7 +6,7 @@ The host receives uplinks from real Sigfox devices through the receiver, authent
 and sends downlinks back through the receiver.
 
 ```
-[Sigfox device] --uplink (RC3)--> [Receiver] --USB serial--> [Host (Node)] --HTTP callback--> [App]
+[Sigfox device] --uplink (RC3)--> [Receiver] --USB serial--> [Host] --HTTP callback--> [App]
        ^                                                           |
        +----------------------- downlink (8 bytes) ----------------+
 ```
