@@ -20,8 +20,11 @@ serialport = { version = "4.10.1", default-features = false }
 sigfox = { version = "0.1.0", path = "../sigfox" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
+ureq = "3.5.0"
+url = "2.5.8"
 
 [dev-dependencies]
 http-body-util = "0.1.5"
 tempfile = "3.27.0"
+tokio-stream = "0.1.19"
 tower = { version = "0.5.3", features = ["util"] }

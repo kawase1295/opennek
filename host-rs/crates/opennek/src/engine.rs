@@ -1,7 +1,7 @@
 //! Turns what the radio receives into stored messages and live events
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -9,9 +9,10 @@ use sigfox::auth::{PUBLIC_KEY, verify_uplink};
 use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
+use crate::callbacks::{CallbackResult, applies_to, run_callback};
 use crate::payload::decode_payload;
 use crate::radio::{RadioEvent, RadioMessage, RadioStatus, now_ms};
-use crate::store::{Auth, Device, DownlinkStatus, Message, NewMessage, Store};
+use crate::store::{Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, NewCallbackLog, NewMessage, Store};
 
 /// The receiver merges repetitions until 10 s after the last one; a repetition later than that is ignored for this long
 const RECENT_MS: i64 = 60_000;
@@ -25,6 +26,7 @@ pub enum Event {
     Message { message: Message },
     Radio { status: RadioStatus },
     Console { line: String, time: i64 },
+    CallbackLog { log: CallbackLog },
 }
 
 impl Event {
@@ -34,6 +36,7 @@ impl Event {
             Event::Message { .. } => "message",
             Event::Radio { .. } => "radio",
             Event::Console { .. } => "console",
+            Event::CallbackLog { .. } => "callbackLog",
         }
     }
 }
@@ -82,7 +85,7 @@ impl Engine {
         self.emit(Event::Console { line, time: now_ms() });
     }
 
-    pub fn handle_radio(&self, e: RadioEvent) {
+    pub fn handle_radio(self: &Arc<Self>, e: RadioEvent) {
         match e {
             RadioEvent::Status(status) => self.emit(Event::Radio { status }),
             RadioEvent::Log(line) => self.console(line),
@@ -95,7 +98,7 @@ impl Engine {
     }
 
     // Repetitions are already merged by the receiver
-    fn handle_sigfox(&self, r: &RadioMessage) -> crate::store::Result<()> {
+    fn handle_sigfox(self: &Arc<Self>, r: &RadioMessage) -> crate::store::Result<()> {
         let m = &r.message;
         let now = now_ms();
         {
@@ -161,11 +164,86 @@ impl Engine {
                 DownlinkStatus::None
             },
         })?;
-        let id = message.id;
-        self.emit(Event::Message { message });
-        // Downlinks are sent from #33 on; until then the host only receives, as with no transmitter
-        if m.downlink
-            && let Some(message) = self.store.set_downlink_status(id, DownlinkStatus::Unsupported)?
+        self.emit(Event::Message {
+            message: message.clone(),
+        });
+
+        // A frame whose key does not match may be spoofed: no callbacks for it
+        let settings = self.store.settings()?;
+        let trusted = auth == Auth::Ok || (auth != Auth::Bad && settings.accept_unknown_devices);
+        let callbacks: Vec<Callback> = if trusted {
+            self.store
+                .list_callbacks()?
+                .into_iter()
+                .filter(|c| c.input.enabled && applies_to(c, &message.fields.device_id))
+                .collect()
+        } else {
+            vec![]
+        };
+        let device_name = device.map(|d| d.name).unwrap_or_default();
+        let waits = !callbacks.is_empty();
+        let engine = self.clone();
+        let finish = move || {
+            let results = engine.run_callbacks(&callbacks, &message, &device_name, settings.downlink_timeout_ms);
+            if let Err(e) = engine.settle_downlink(&message, &results) {
+                engine.console(format!("error: {e}"));
+            }
+        };
+        // Callbacks wait for the user's server, which must not hold up the receiver
+        if waits {
+            std::thread::spawn(finish);
+        } else {
+            finish();
+        }
+        Ok(())
+    }
+
+    /// All callbacks at once; each answer is logged as it comes
+    fn run_callbacks(
+        &self,
+        callbacks: &[Callback],
+        message: &Message,
+        device_name: &str,
+        timeout_ms: u32,
+    ) -> Vec<CallbackResult> {
+        let (done, answers) = std::sync::mpsc::channel();
+        std::thread::scope(|s| {
+            for cb in callbacks {
+                let done = done.clone();
+                s.spawn(move || done.send((cb.id, run_callback(cb, message, device_name, timeout_ms))));
+            }
+            drop(done);
+            answers
+                .iter()
+                .map(|(callback_id, r)| self.log_callback(callback_id, message.id, r))
+                .collect()
+        })
+    }
+
+    fn log_callback(&self, callback_id: i64, message_id: i64, r: CallbackResult) -> CallbackResult {
+        let log = self.store.insert_log(&NewCallbackLog {
+            callback_id,
+            message_id,
+            time: now_ms(),
+            status: r.status.map(i64::from),
+            ok: r.ok,
+            error: r.error.clone(),
+            duration_ms: r.duration_ms,
+            response: r.response.clone(),
+        });
+        match log {
+            Ok(log) => self.emit(Event::CallbackLog { log }),
+            Err(e) => self.console(format!("error: {e}")),
+        }
+        r
+    }
+
+    // Downlinks are sent from #42 on; until then the host only receives, as with no transmitter
+    fn settle_downlink(&self, message: &Message, _results: &[CallbackResult]) -> crate::store::Result<()> {
+        if message.fields.ack
+            && let Some(message) = self
+                .store
+                .set_downlink_status(message.id, DownlinkStatus::Unsupported)?
         {
             self.emit(Event::Message { message });
         }

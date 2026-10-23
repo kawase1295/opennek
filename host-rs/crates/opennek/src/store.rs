@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data
 ";
 
 const MAX_MESSAGES: i64 = 10_000;
+const MAX_LOGS: i64 = 2000;
 const DEFAULT_LIMIT: u32 = 100;
 const MAX_LIMIT: u32 = 1000;
 
@@ -168,6 +169,75 @@ impl DeviceInput {
     }
 }
 
+/// A callback as the UI saves it, checked like the TypeScript host's CallbackInput. Stored as JSON in this order
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CallbackInput {
+    pub name: String,
+    pub enabled: bool,
+    /// Comma-separated device IDs; empty for every device
+    pub devices: String,
+    /// GET, POST or PUT
+    pub method: String,
+    pub url: String,
+    /// Header values may use variables
+    pub headers: serde_json::Map<String, Value>,
+    pub content_type: String,
+    pub body: String,
+    /// Take downlink data from the response
+    pub downlink: bool,
+}
+
+impl Default for CallbackInput {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            enabled: true,
+            devices: String::new(),
+            method: "POST".into(),
+            url: String::new(),
+            headers: Default::default(),
+            content_type: "application/json".into(),
+            body: String::new(),
+            downlink: false,
+        }
+    }
+}
+
+const METHODS: [&str; 3] = ["GET", "POST", "PUT"];
+
+impl CallbackInput {
+    pub fn parse(body: Value) -> std::result::Result<CallbackInput, String> {
+        let Value::Object(fields) = &body else {
+            return Err("body: expected an object".into());
+        };
+        if !fields.contains_key("url") {
+            return Err("url: required".into());
+        }
+        let c: CallbackInput = serde_json::from_value(body).map_err(|e| format!("body: {e}"))?;
+        if c.name.chars().count() > 64 {
+            return Err("name: at most 64 characters".into());
+        }
+        if !METHODS.contains(&c.method.as_str()) {
+            return Err(format!("method: one of {}", METHODS.join(", ")));
+        }
+        if url::Url::parse(&c.url).is_err() {
+            return Err("url: invalid URL".into());
+        }
+        if let Some((k, _)) = c.headers.iter().find(|(_, v)| !v.is_string()) {
+            return Err(format!("headers.{k}: expected string"));
+        }
+        Ok(c)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Callback {
+    #[serde(flatten)]
+    pub input: CallbackInput,
+    pub id: i64,
+}
+
 /// How an uplink's authentication field checked out
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -262,6 +332,13 @@ pub struct MessageQuery {
 #[serde(rename_all = "camelCase")]
 pub struct CallbackLog {
     pub id: i64,
+    #[serde(flatten)]
+    pub fields: NewCallbackLog,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewCallbackLog {
     pub callback_id: i64,
     pub message_id: i64,
     pub time: i64,
@@ -317,14 +394,16 @@ fn to_message(r: &Row) -> Result<Message> {
 fn to_log(r: &Row) -> Result<CallbackLog> {
     Ok(CallbackLog {
         id: r.get("id")?,
-        callback_id: r.get("callback_id")?,
-        message_id: r.get("message_id")?,
-        time: r.get("time")?,
-        status: r.get("status")?,
-        ok: r.get("ok")?,
-        error: r.get("error")?,
-        duration_ms: r.get("duration_ms")?,
-        response: r.get("response")?,
+        fields: NewCallbackLog {
+            callback_id: r.get("callback_id")?,
+            message_id: r.get("message_id")?,
+            time: r.get("time")?,
+            status: r.get("status")?,
+            ok: r.get("ok")?,
+            error: r.get("error")?,
+            duration_ms: r.get("duration_ms")?,
+            response: r.get("response")?,
+        },
     })
 }
 
@@ -503,9 +582,10 @@ impl Store {
         Ok(())
     }
 
-    // --- callbacks (edited from #33 on; listed as stored)
+    // --- callbacks
 
-    pub fn list_callbacks(&self) -> Result<Vec<Value>> {
+    /// Callbacks as stored; fields that do not parse take their defaults
+    pub fn list_callbacks(&self) -> Result<Vec<Callback>> {
         let rows: Vec<(i64, String)> = self
             .db()
             .prepare("SELECT id, data FROM callbacks ORDER BY id")?
@@ -513,14 +593,61 @@ impl Store {
             .collect::<Result<_>>()?;
         Ok(rows
             .into_iter()
-            .map(|(id, data)| {
-                let mut v = serde_json::from_str(&data).unwrap_or_else(|_| Value::Object(Default::default()));
-                if let Value::Object(o) = &mut v {
-                    o.insert("id".into(), id.into());
-                }
-                v
+            .map(|(id, data)| Callback {
+                input: serde_json::from_str(&data).unwrap_or_default(),
+                id,
             })
             .collect())
+    }
+
+    pub fn get_callback(&self, id: i64) -> Result<Option<Callback>> {
+        Ok(self.list_callbacks()?.into_iter().find(|c| c.id == id))
+    }
+
+    pub fn create_callback(&self, c: &CallbackInput) -> Result<Callback> {
+        let data = serde_json::to_string(c).expect("callbacks serialize");
+        let id = self
+            .db()
+            .query_row("INSERT INTO callbacks (data) VALUES (?) RETURNING id", [data], |r| {
+                r.get(0)
+            })?;
+        Ok(Callback { input: c.clone(), id })
+    }
+
+    pub fn update_callback(&self, id: i64, c: &CallbackInput) -> Result<Option<Callback>> {
+        let data = serde_json::to_string(c).expect("callbacks serialize");
+        let changed = self
+            .db()
+            .execute("UPDATE callbacks SET data = ? WHERE id = ?", params![data, id])?;
+        Ok((changed > 0).then(|| Callback { input: c.clone(), id }))
+    }
+
+    pub fn delete_callback(&self, id: i64) -> Result<()> {
+        self.db().execute("DELETE FROM callbacks WHERE id = ?", [id])?;
+        Ok(())
+    }
+
+    // --- callback logs
+
+    pub fn insert_log(&self, l: &NewCallbackLog) -> Result<CallbackLog> {
+        let db = self.db();
+        let log = db.query_row(
+            "INSERT INTO callback_logs (callback_id, message_id, time, status, ok, error, duration_ms, response)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            params![
+                l.callback_id,
+                l.message_id,
+                l.time,
+                l.status,
+                l.ok,
+                l.error,
+                l.duration_ms,
+                l.response
+            ],
+            to_log,
+        )?;
+        db.execute("DELETE FROM callback_logs WHERE id <= ?", [log.id - MAX_LOGS])?;
+        Ok(log)
     }
 
     pub fn list_logs(

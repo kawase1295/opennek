@@ -9,17 +9,18 @@ use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::sse::{self, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
+use crate::callbacks::{applies_to, dummy_message, run_callback};
 use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::now_ms;
 use crate::serial::list_serial_ports;
-use crate::store::{DeviceInput, MessageQuery};
+use crate::store::{CallbackInput, DeviceInput, MessageQuery};
 
 // The UI is plain JS without a build step; it is embedded so the binary needs no file next to it
 const INDEX_HTML: &str = include_str!("../../../../host/src/ui/index.html");
@@ -64,7 +65,9 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/devices/{id}", put(save_device).delete(delete_device))
         .route("/messages", get(messages).delete(clear_messages))
         .route("/messages.csv", get(messages_csv))
-        .route("/callbacks", get(callbacks))
+        .route("/callbacks", get(callbacks).post(create_callback))
+        .route("/callbacks/{id}", put(update_callback).delete(delete_callback))
+        .route("/callbacks/{id}/test", post(test_callback))
         .route("/callback-logs", get(callback_logs))
         .route("/events", get(events));
     Router::new()
@@ -199,6 +202,59 @@ async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>)
 
 async fn callbacks(State(host): Shared) -> ApiResult {
     to_json(host.engine.store().list_callbacks()?)
+}
+
+fn callback_input(body: Value) -> Result<CallbackInput, ApiError> {
+    CallbackInput::parse(body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))
+}
+
+fn not_found() -> ApiError {
+    ApiError(StatusCode::NOT_FOUND, "not found".into())
+}
+
+async fn create_callback(State(host): Shared, Json(body): Json<Value>) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let created = host.engine.store().create_callback(&callback_input(body)?)?;
+    Ok((StatusCode::CREATED, to_json(created)?))
+}
+
+async fn update_callback(State(host): Shared, Path(id): Path<String>, Json(body): Json<Value>) -> ApiResult {
+    let id = id.parse().map_err(|_| not_found())?;
+    let updated = host.engine.store().update_callback(id, &callback_input(body)?)?;
+    to_json(updated.ok_or_else(not_found)?)
+}
+
+async fn delete_callback(State(host): Shared, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+    if let Ok(id) = id.parse() {
+        host.engine.store().delete_callback(id)?;
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// Tries a callback with the latest message it applies to (or a made-up one); not logged
+async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult {
+    let id = id.parse().map_err(|_| not_found())?;
+    let store = host.engine.store();
+    let cb = store.get_callback(id)?.ok_or_else(not_found)?;
+    let recent = store.list_messages(&MessageQuery {
+        limit: Some(50),
+        ..Default::default()
+    })?;
+    let message = recent
+        .into_iter()
+        .find(|m| applies_to(&cb, &m.fields.device_id))
+        .unwrap_or_else(|| dummy_message(cb.input.downlink));
+    let device_name = store
+        .get_device(&message.fields.device_id)?
+        .map(|d| d.name)
+        .unwrap_or_default();
+    let timeout = store.settings()?.downlink_timeout_ms;
+    let (message, result) = tokio::task::spawn_blocking(move || {
+        let result = run_callback(&cb, &message, &device_name, timeout);
+        (message, result)
+    })
+    .await
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    to_json(json!({ "message": message, "result": result }))
 }
 
 async fn callback_logs(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> ApiResult {

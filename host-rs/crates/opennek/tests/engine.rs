@@ -28,7 +28,7 @@ fn message(counter: u16, rssi: f32) -> RadioEvent {
 
 #[test]
 fn rssi_is_rounded_like_the_typescript_host() {
-    let engine = Engine::new(Store::open_in_memory().unwrap());
+    let engine = std::sync::Arc::new(Engine::new(Store::open_in_memory().unwrap()));
     // the streamer gives 0.5 dB steps; halves go up, as with Math.round
     engine.handle_radio(message(1, -90.5));
     engine.handle_radio(message(2, -90.4));
@@ -44,7 +44,7 @@ fn rssi_is_rounded_like_the_typescript_host() {
 
 #[test]
 fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_unsupported() {
-    let engine = Engine::new(Store::open_in_memory().unwrap());
+    let engine = std::sync::Arc::new(Engine::new(Store::open_in_memory().unwrap()));
     let mut events = engine.subscribe();
     engine.handle_radio(message(7, -80.0));
     engine.handle_radio(message(7, -80.0));
@@ -67,7 +67,7 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_u
 
 #[test]
 fn an_oob_frame_that_is_not_a_control_message_is_decoded_with_the_payload_config() {
-    let engine = Engine::new(Store::open_in_memory().unwrap());
+    let engine = std::sync::Arc::new(Engine::new(Store::open_in_memory().unwrap()));
     let body = serde_json::json!({ "payloadConfig": "v::uint:8" });
     engine
         .store()
