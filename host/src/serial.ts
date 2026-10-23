@@ -1,4 +1,6 @@
-import { constants, createReadStream, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { constants, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
+import { ReadStream as TtyReadStream } from 'node:tty'
 
 // Linux のシリアルポートを stty で raw 115200 にして直接読み書きする (ネイティブアドオン不要)
 const BAUD = 115200
@@ -30,16 +32,17 @@ export type LinePort = { write(line: string): void; close(): Promise<void> }
 
 // raw 115200 にしたポートを行単位で読む。stty や open の失敗は例外 (権限不足ならヒント付き)
 export function openLinePort(port: string, onLine: (line: string) => void, onError: (e: unknown) => void): LinePort {
-  const stty = Bun.spawnSync(['stty', '-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { stderr: 'pipe' })
-  if (stty.exitCode !== 0) {
-    const err = stty.stderr.toString().trim()
+  const stty = spawnSync('stty', ['-F', port, String(BAUD), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { encoding: 'utf8' })
+  if (stty.status !== 0) {
+    const err = (stty.stderr || stty.error?.message || '').trim()
     const hint = /permission denied/i.test(err) ? ' — run `sudo usermod -aG dialout $USER` and log in again' : ''
     throw new Error(`${err}${hint}`)
   }
   const fd = openSync(port, constants.O_RDWR | constants.O_NOCTTY)
   let buf = ''
-  // fd はストリームに持たせる (Bun は autoClose: false でも destroy 時に fd を閉じるため)
-  const stream = createReadStream('', { fd, encoding: 'utf8' })
+  // fd はストリームに持たせ、destroy で一緒に閉じる
+  const stream = new TtyReadStream(fd)
+  stream.setEncoding('utf8')
   let open = true
   stream.on('data', (chunk) => {
     buf += chunk

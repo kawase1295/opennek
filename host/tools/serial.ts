@@ -1,4 +1,7 @@
-import { constants, createReadStream, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { constants, existsSync, openSync, readdirSync, realpathSync, writeSync } from 'node:fs'
+import { setTimeout as sleep } from 'node:timers/promises'
+import { ReadStream as TtyReadStream } from 'node:tty'
 
 // Minimal Linux serial port for the CLI tools: stty for line settings, plain fd for I/O.
 // Through the OpenNEK ESP32-S3 bridge (hardware USB serial, which ignores the host's baud rate) the
@@ -14,8 +17,8 @@ export type Port = {
 }
 
 function stty(path: string, baud: number) {
-  const r = Bun.spawnSync(['stty', '-F', path, String(baud), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { stderr: 'pipe' })
-  if (r.exitCode !== 0) throw new Error(`stty ${path}: ${r.stderr.toString().trim()}`)
+  const r = spawnSync('stty', ['-F', path, String(baud), 'raw', '-echo', '-echoe', '-echok', '-echoctl', '-echoke', '-hupcl', 'cs8', '-cstopb', '-parenb', '-crtscts'], { encoding: 'utf8' })
+  if (r.status !== 0) throw new Error(`stty ${path}: ${(r.stderr || r.error?.message || '').trim()}`)
 }
 
 const BRIDGE_GUARD_MS = 160
@@ -34,7 +37,7 @@ export function openPort(path: string, baud: number): Port {
   const bridge = isBridge(path)
   let lastWrite = 0
   const fd = openSync(path, constants.O_RDWR | constants.O_NOCTTY)
-  const stream = createReadStream('', { fd })
+  const stream = new TtyReadStream(fd)
   let buf: number[] = []
   let lineBuf = ''
   let waiter: (() => void) | null = null
@@ -76,11 +79,11 @@ export function openPort(path: string, baud: number): Port {
       stty(path, b)
       if (!bridge) return
       // The command is only recognised after a quiet period; its "~~~OK" reply is discarded
-      await Bun.sleep(Math.max(0, BRIDGE_GUARD_MS - (Date.now() - lastWrite)))
+      await sleep(Math.max(0, BRIDGE_GUARD_MS - (Date.now() - lastWrite)))
       writeSync(fd, `~~~OPENNEK:BAUD=${b}\n`)
       lastWrite = Date.now()
       await wait(100)
-      await Bun.sleep(20)
+      await sleep(20)
       buf = []
     },
     async readByte(timeoutMs) {

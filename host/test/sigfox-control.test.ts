@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { Store } from '../src/db'
 import { Engine } from '../src/engine'
 import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'

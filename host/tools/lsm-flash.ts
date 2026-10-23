@@ -1,10 +1,12 @@
 // Flash a firmware image into the SEONG JI LSM100A through its IAP bootloader (Ymodem, 115200 bps).
-//   bun tools/lsm-flash.ts /dev/ttyACM0 firmware.bin
+//   npx tsx tools/lsm-flash.ts /dev/ttyACM0 firmware.bin
 // The module is reset automatically when it runs the stock AT firmware (ATZ at 9600 bps) or the
 // OpenNEK RSSI streamer ("X"). Otherwise reset it by hand while "Waiting for the bootloader" is shown.
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { isBridge, openPort, type Port } from './serial'
+import { isMain } from './main'
 
 const SOH = 0x01
 const STX = 0x02
@@ -108,26 +110,26 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
     // OpenNEK streamer: reset it with "X" and knock from here. The bridge's IAP command is too late for it:
     // it spends ~130 ms at 9600 bps for the AT firmware before knocking, and a KNOCK command needs 150 ms of
     // silence first
-    await Bun.sleep(200)
+    await sleep(200)
     port.drain()
     port.write('\nX\n')
     let seen = ''
     for (const start = Date.now(); Date.now() - start < 1500; ) {
       port.write('1')
-      await Bun.sleep(10)
+      await sleep(10)
       seen += new TextDecoder('latin1').decode(port.drain())
       // Stop at the prompt: further bytes would land in the Ymodem receiver
       if (bootloaderOutput(seen).includes(PROMPT)) return
     }
     // Stock AT firmware: the bridge resets the module and catches the 0.5 s bootloader window itself
-    await Bun.sleep(200)
+    await sleep(200)
     port.drain()
     port.write('~~~OPENNEK:IAP\n')
   } else {
     // Stock AT firmware: soft reset at 9600; OpenNEK streamer: "X" at 115200
     await port.setBaud(9600)
     port.write('ATZ\r') // the AT firmware expects CR only
-    await Bun.sleep(30)
+    await sleep(30)
     await port.setBaud(115200)
     port.write('\nX\n') // the newline ends any partial command, which would swallow the X
   }
@@ -139,7 +141,7 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
     if (!bridge) port.write('1')
     // Through the bridge, let it knock (it is fast enough for the 0.5 s window after a manual reset)
     else if (i % 200 === 40 && !seen.includes('~~~OK knock=seen') && !seen.includes('~~~OK iap=seen')) port.write('~~~OPENNEK:KNOCK=9000\n')
-    await Bun.sleep(50)
+    await sleep(50)
     const got = new TextDecoder('latin1').decode(port.drain())
     if (got && process.env.YMODEM_DEBUG) console.error(`rx ${JSON.stringify(got)}`)
     seen += got
@@ -148,12 +150,12 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
     if (out.includes(PROMPT) || out.includes('CCC')) {
       // Through the bridge, wait for its "~~~OK" line: until then it may still be knocking
       for (let k = 0, o = out; bridge && k < 200 && !/~~~OK (knock|iap)=/.test(o.slice(o.search(/Waiting|CCC/))); k++) {
-        await Bun.sleep(50)
+        await sleep(50)
         seen += new TextDecoder('latin1').decode(port.drain())
         o = bootloaderOutput(seen)
       }
       // Let the bootloader settle, then drop the backlog of CRC requests
-      await Bun.sleep(300)
+      await sleep(300)
       // Sample lines still arriving mean the streamer is running: it was not the bootloader
       if (/R[0-9A-F]{4}:/.test(new TextDecoder('latin1').decode(port.drain()))) {
         seen = ''
@@ -166,10 +168,10 @@ async function enterBootloader(port: Port, bridge: boolean): Promise<void> {
   throw new Error(`bootloader did not answer within ${polls / 20} s`)
 }
 
-if (import.meta.main) {
+if (isMain(import.meta.url)) {
   const [path, file] = process.argv.slice(2)
   if (!path || !file) {
-    console.error('usage: bun tools/lsm-flash.ts <serial port> <firmware.bin>')
+    console.error('usage: npx tsx tools/lsm-flash.ts <serial port> <firmware.bin>')
     process.exit(2)
   }
   const image = new Uint8Array(readFileSync(file))

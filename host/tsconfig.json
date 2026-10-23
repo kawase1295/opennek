@@ -4,7 +4,7 @@
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "types": ["bun"],
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
@@ -12,5 +12,5 @@
     "verbatimModuleSyntax": true
   },
   "include": ["src", "test", "tools"],
-  "exclude": ["src/ui/app.js", "src/ui/i18n.js"]
+  "exclude": ["src/ui"]
 }

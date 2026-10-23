@@ -10,17 +10,16 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
 
 ```
 ┌──────────────┐  Sigfox RC3 (923.2 MHz)   ┌──────────────┐  USB serial  ┌───────────────────────┐  HTTP   ┌──────────┐
-│ Sigfox device │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Bun + Hono)  │ ──────▶ │ Your     │
+│ Sigfox device │ ─ uplink ×3 ───────────▶ │ XIAO ESP32S3 │ ─ RSSI/CFO ─▶ │ opennek (Node + Hono) │ ──────▶ │ Your     │
 │               │ ◀──── downlink (922 MHz) │ + Wio-SX1262 │ ◀──── TX ──── │ Web UI / SQLite       │ ◀────── │ app      │
 └──────────────┘                            └──────────────┘               └───────────────────────┘         └──────────┘
 ```
 
 | Part | Contents |
 |---|---|
-| `host/` | Host server. Bun + Hono + bun:sqlite. Sigfox decoder, web UI, callbacks, downlinks |
+| `host/` | Host server. Node.js + Hono + node:sqlite. Sigfox decoder, web UI, callbacks, downlinks |
 | `firmware/` | PlatformIO (Arduino) firmware. `radio-xiao-sx1262` = the radio: streams RSSI from the Wio-SX1262 to the host and sends downlinks |
 | `docs/protocol.md` | Callback and downlink specification |
-| `packaging/build-deb.sh` | Builds a `.deb` for Ubuntu |
 
 ---
 
@@ -31,11 +30,12 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. Start the host with the kit's serial port:
+3. Start the host with the kit's serial port (Node.js 22.13 or later):
    ```bash
    cd host
-   bun install
-   bun run start -- --sigfox /dev/ttyACM0
+   npm install
+   npm run build
+   npm start -- --sigfox /dev/ttyACM0
    ```
 
 Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
@@ -43,6 +43,8 @@ Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
 If you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
+
+Data is stored in `~/.local/share/opennek/`.
 
 ### Uplink authentication
 
@@ -118,21 +120,10 @@ usbipd attach --wsl --busid <BUSID>
 
 The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 
-## Building the .deb
-
-```bash
-./packaging/build-deb.sh     # → dist/opennek_0.1.0_amd64.deb
-sudo apt install ./dist/opennek_0.1.0_amd64.deb
-opennek --open --sigfox /dev/ttyACM0     # or: systemctl --user enable --now opennek
-```
-
-The host is compiled into a single binary with `bun build --compile`, so neither Bun nor Node is needed to run it.
-Data is stored in `~/.local/share/opennek/`.
-
 ## Development
 
 ```bash
-(cd host && bun test && bun run typecheck)
+(cd host && npm test && npm run typecheck)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../host/test/fixtures)

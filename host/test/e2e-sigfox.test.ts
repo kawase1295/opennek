@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, test } from 'bun:test'
-import { constants, createReadStream, existsSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { afterAll, describe, expect, test } from 'vitest'
+import { constants, existsSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from '../src/db'
@@ -7,9 +7,12 @@ import { Engine, type EngineEvent } from '../src/engine'
 import { type SigfoxDownlinkTx, SigfoxRadio } from '../src/radio'
 import { PUBLIC_KEY, uplinkAuth } from '../src/sigfox/auth'
 import { encodeDownlink, RC3_DL_T_RX_MS, RC3_DL_T_W_MS } from '../src/sigfox/downlink'
+import { DatabaseSync } from 'node:sqlite'
+import { ReadStream as TtyReadStream } from 'node:tty'
+import { hasCommand, ptyPair, run, serveFetch, sleep } from './helpers'
 
 // Real RC3 uplinks from device 00763DA3 recorded with the LSM100A streamer (2 kHz, raw = -2 * dBm)
-const live = readFileSync(join(import.meta.dir, 'fixtures/rc3-00763DA3-live.rssi'))
+const live = readFileSync(join(import.meta.dirname, 'fixtures/rc3-00763DA3-live.rssi'))
 
 // The streamer's line format: 64 samples per line with a 16-bit sequence number
 function* streamerLines(raw: Uint8Array) {
@@ -19,16 +22,13 @@ function* streamerLines(raw: Uint8Array) {
   }
 }
 
-const settle = async (ms = 50) => await Bun.sleep(ms)
+const settle = async (ms = 50) => await sleep(ms)
 
 test('real Sigfox uplinks become messages and run callbacks', async () => {
   const hits: { url: string; body: any }[] = []
-  const server = Bun.serve({
-    port: 0,
-    async fetch(req) {
-      hits.push({ url: req.url, body: await req.json() })
-      return new Response(null, { status: 204 })
-    },
+  const server = await serveFetch(async (req) => {
+    hits.push({ url: req.url, body: await req.json() })
+    return new Response(null, { status: 204 })
   })
   const store = new Store(':memory:')
   store.createCallback({
@@ -47,7 +47,7 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
   for (const line of streamerLines(live)) radio.handleLine(line)
   radio.flush()
   for (let i = 0; i < 100 && hits.length < 3; i++) await settle(20)
-  server.stop(true)
+  server.close()
 
   const messages = store.listMessages().reverse()
   expect(messages.map((m) => [m.seq, m.data, m.ack, m.auth])).toEqual([
@@ -76,7 +76,7 @@ test('real Sigfox uplinks become messages and run callbacks', async () => {
     { device: '00763DA3', seq: 1983, data: '11', ack: false },
     { device: '00763DA3', seq: 1984, data: '11', ack: true },
   ])
-  expect(hits[0]!.url).toEndWith('/up?device=00763DA3')
+  expect(hits[0]!.url).toMatch(/\/up\?device=00763DA3$/)
 
   const status = radio.status()
   expect(status).toMatchObject({ state: 'connected', fw: '0.1.0', freq: 923_200_000, rate: 2000, lostLines: 0 })
@@ -125,7 +125,7 @@ describe('authentication of real Sigfox uplinks', () => {
 
   test('public key uplinks run callbacks only while unknown devices are accepted', async () => {
     const hits: number[] = []
-    const server = Bun.serve({ port: 0, fetch: () => (hits.push(1), new Response(null, { status: 204 })) })
+    const server = await serveFetch(() => (hits.push(1), new Response(null, { status: 204 })))
     for (const accept of [false, true]) {
       const { store, engine } = setup('', accept)
       store.createCallback({
@@ -133,9 +133,9 @@ describe('authentication of real Sigfox uplinks', () => {
         contentType: 'application/json', body: '{}', downlink: false,
       })
       engine.handleSigfox(uplink(PUBLIC_KEY, 1))
-      for (let i = 0; i < 50 && store.listLogs().length === 0 && accept; i++) await Bun.sleep(10)
+      for (let i = 0; i < 50 && store.listLogs().length === 0 && accept; i++) await sleep(10)
     }
-    server.stop(true)
+    server.close()
     expect(hits).toHaveLength(1)
   })
 
@@ -247,28 +247,27 @@ describe('downlinks to real Sigfox devices', () => {
 
 test('an existing database loses the ESP-NOW messages and their columns', () => {
   const path = join(mkdtempSync(join(tmpdir(), 'opennek-')), 'old.db')
-  const { Database } = require('bun:sqlite')
-  const old = new Database(path, { create: true })
-  old.run(`CREATE TABLE messages (
+  const old = new DatabaseSync(path)
+  old.exec(`CREATE TABLE messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL,
     data TEXT NOT NULL, ack INTEGER NOT NULL, oob INTEGER NOT NULL, rssi INTEGER NOT NULL, nb_frames INTEGER NOT NULL,
     auth TEXT NOT NULL, src TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
     downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none', radio TEXT NOT NULL DEFAULT 'espnow')`)
-  old.run(`CREATE TABLE callback_logs (
+  old.exec(`CREATE TABLE callback_logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, callback_id INTEGER NOT NULL, message_id INTEGER NOT NULL, time INTEGER NOT NULL,
     status INTEGER, ok INTEGER NOT NULL, error TEXT, duration_ms INTEGER NOT NULL, response TEXT)`)
-  old.run(`INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, src, station, radio) VALUES
+  old.exec(`INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, src, station, radio) VALUES
     ('F0000001', 1, 1, '01', 0, 0, -50, 3, 'ok', '02:00:00:00:00:01', '0001', 'espnow'),
     ('00763DA3', 2, 7, '02', 0, 0, -80, 3, 'unverified', 'sigfox', '0000', 'sigfox')`)
-  old.run(`INSERT INTO callback_logs (callback_id, message_id, time, ok, duration_ms) VALUES (1, 1, 1, 1, 5), (1, 2, 2, 1, 5)`)
+  old.exec(`INSERT INTO callback_logs (callback_id, message_id, time, ok, duration_ms) VALUES (1, 1, 1, 1, 5), (1, 2, 2, 1, 5)`)
   old.close()
 
   const store = new Store(path)
   expect(store.listMessages()).toEqual([
     expect.objectContaining({ deviceId: '00763DA3', seq: 7, station: '0000' }),
   ])
-  expect(store.listMessages()[0]).not.toContainKey('radio')
-  expect(store.listMessages()[0]).not.toContainKey('src')
+  expect(store.listMessages()[0]).not.toHaveProperty('radio')
+  expect(store.listMessages()[0]).not.toHaveProperty('src')
   expect(store.listLogs().map((l) => l.messageId)).toEqual([2])
   // inserting works on the migrated table
   store.insertMessage({
@@ -280,18 +279,19 @@ test('an existing database loses the ESP-NOW messages and their columns', () => 
 })
 
 // The receiver over a real serial line: socat stands in for the bridge and the streamer
-const hasSocat = Bun.which('socat') !== null
+const hasSocat = hasCommand('socat')
 const dir = mkdtempSync(join(tmpdir(), 'opennek-'))
 const fwPath = join(dir, 'fw')
 const hostPath = join(dir, 'host')
-const socat = hasSocat ? Bun.spawn(['socat', `pty,raw,echo=0,link=${fwPath}`, `pty,raw,echo=0,link=${hostPath}`], { stderr: 'ignore' }) : null
+const socat = hasSocat ? ptyPair(fwPath, hostPath) : null
 afterAll(() => socat?.kill())
 
 test.skipIf(!hasSocat)('Sigfox receiver over a serial line', async () => {
   for (let i = 0; i < 50 && !(existsSync(fwPath) && existsSync(hostPath)); i++) await settle(20)
   const fd = openSync(fwPath, constants.O_RDWR | constants.O_NOCTTY)
   const commands: string[] = []
-  const rs = createReadStream('', { fd, encoding: 'latin1' })
+  const rs = new TtyReadStream(fd)
+  rs.setEncoding('latin1')
   let buf = ''
   rs.on('data', (chunk) => {
     buf += chunk
@@ -313,8 +313,7 @@ test.skipIf(!hasSocat)('Sigfox receiver over a serial line', async () => {
   // Written by another process: a blocking write here would fill the pty while this process cannot read it
   const recording = join(dir, 'stream.txt')
   writeFileSync(recording, `${[...streamerLines(live)].join('\n')}\n`)
-  const cat = Bun.spawn(['sh', '-c', 'cat "$0" > "$1"', recording, fwPath])
-  await cat.exited
+  await run('sh', ['-c', 'cat "$0" > "$1"', recording, fwPath])
   for (let i = 0; i < 200 && store.listMessages().length < 2; i++) await settle(20)
   // The last message is still waiting for its quiet period; stopping flushes it
   await radio.stop()

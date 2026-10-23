@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { extractDownlink, renderTemplate } from '../src/callbacks'
 
 test('renderTemplate replaces known variables and leaves others', () => {

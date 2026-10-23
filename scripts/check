@@ -2,6 +2,7 @@
 # Checks that must pass before merging. CI runs this same script.
 set -euo pipefail
 cd "$(dirname "$0")/../host"
-bun install --frozen-lockfile
-bun run typecheck
-bun test
+npm ci
+npm run typecheck
+npm test
+npm run build

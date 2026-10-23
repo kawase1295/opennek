@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises'
 import { appliesTo, runCallback } from './callbacks'
 import type { Auth, CallbackLog, Device, Message, Store } from './db'
 import { renderDownlink } from './downlink'
@@ -199,7 +200,7 @@ export class Engine {
     }
     const freqHz = downlinkFrequency(f.uplinkFreqHz)
     const frame = encodeDownlink({ deviceId: f.deviceId, counter: f.seq, payload: fromHex(data), key })
-    await Bun.sleep(Math.max(0, at - Date.now()))
+    await sleep(Math.max(0, at - Date.now()))
     // 電波を出すので送信はすべて記録する
     this.console(`${name}: TX ${(freqHz / 1e6).toFixed(6)} MHz data=${data} frame=${toHex(frame)}`)
     const ok = await this.sigfoxTx.transmit({ deviceId: f.deviceId, counter: f.seq, freqHz, frame, deadline }).catch((e) => {

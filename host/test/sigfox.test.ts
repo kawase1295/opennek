@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { burstBits, decodeCapture } from '../src/sigfox/demod'
@@ -90,7 +90,7 @@ describe('demodulator', () => {
 })
 
 describe('real capture (LSM100A, RC3, device 00763DA3)', () => {
-  const raw = readFileSync(join(import.meta.dir, 'fixtures/rc3-00763DA3.rssi'))
+  const raw = readFileSync(join(import.meta.dirname, 'fixtures/rc3-00763DA3.rssi'))
 
   test('every repetition of the three messages decodes with a valid CRC', () => {
     const frames = decodeCapture(Float32Array.from(raw, (r) => -r / 2), 2000)
@@ -119,7 +119,7 @@ describe('real capture (LSM100A, RC3, device 00763DA3)', () => {
 })
 
 describe('live session (5-byte payload and downlink request)', () => {
-  const raw = readFileSync(join(import.meta.dir, 'fixtures/rc3-00763DA3-live.rssi'))
+  const raw = readFileSync(join(import.meta.dirname, 'fixtures/rc3-00763DA3-live.rssi'))
 
   test('repetitions about 4 s apart still merge into one message each', () => {
     const messages: SigfoxMessage[] = []

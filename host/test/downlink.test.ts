@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { DeviceInput } from '../src/db'
 import { parseDownlinkTemplate, renderDownlink } from '../src/downlink'
 

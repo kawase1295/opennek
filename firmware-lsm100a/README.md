@@ -32,7 +32,7 @@ cd firmware && pio run -e bridge-s3 -t upload
 
 ```bash
 cd firmware-lsm100a && pio run                       # .pio/build/lsm100a/firmware.bin
-cd host && bun tools/lsm-flash.ts /dev/ttyACM0 ../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
+cd host && npx tsx tools/lsm-flash.ts /dev/ttyACM0 ../firmware-lsm100a/.pio/build/lsm100a/firmware.bin
 ```
 
 `lsm-flash.ts` resets the module (ATZ for the stock firmware, `X` for this firmware) and talks to the
@@ -45,7 +45,7 @@ To go back to the stock AT firmware, flash `FW/LSM100A_SDK_V104_240129.bin` from
 ## Capture
 
 ```bash
-cd host && bun tools/rssi-capture.ts /dev/ttyACM0 --out capture
+cd host && npx tsx tools/rssi-capture.ts /dev/ttyACM0 --out capture
 ```
 
 Send a few frames from another Sigfox device (e.g. `AT$SF=0102030405` on a second LSM100A) and stop with
@@ -57,7 +57,7 @@ Options: `--freq <hz>` (default 923200000), `--bw <code>` (SX126x RX bandwidth c
 ## Decode Sigfox uplinks live
 
 ```bash
-cd host && bun tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
+cd host && npx tsx tools/sigfox-listen.ts /dev/ttyACM0 [--save session.json]
 ```
 
 Prints every frame (repetition, CRC, RSSI, receiver clock error) and one line per message once its
@@ -70,7 +70,7 @@ The host runs the same decoder. Real Sigfox messages then appear in the Web UI a
 trigger the Sigfox-compatible callbacks:
 
 ```bash
-cd host && bun src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
+cd host && npx tsx src/index.ts --sigfox /dev/ttyACM0 [--sigfox-freq 923200000]
 ```
 
 The port is remembered; pick it (or "Don't use" to turn the receiver off) under Settings → Sigfox receiver (RC3).

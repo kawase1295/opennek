@@ -1,5 +1,5 @@
 // Live Sigfox uplink receiver: reads the OpenNEK LSM100A RSSI streamer and prints decoded messages.
-//   bun tools/sigfox-listen.ts /dev/ttyACM0 [--freq 923200000] [--save capture.json]
+//   npx tsx tools/sigfox-listen.ts /dev/ttyACM0 [--freq 923200000] [--save capture.json]
 import { writeFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { SigfoxReceiver } from '../src/sigfox/receiver'
@@ -11,7 +11,7 @@ const { values: args, positionals } = parseArgs({
 })
 const path = positionals[0]
 if (!path) {
-  console.error('usage: bun tools/sigfox-listen.ts <serial port> [--freq hz] [--save capture.json]')
+  console.error('usage: npx tsx tools/sigfox-listen.ts <serial port> [--freq hz] [--save capture.json]')
   process.exit(2)
 }
 

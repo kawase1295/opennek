@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 // server.ts が同じファイルを text として import しているので、クエリを付けて別のモジュールとして読む
@@ -17,7 +17,7 @@ test('defaults to English without a stored choice', () => {
 })
 
 test('every key used by app.js has an English string', () => {
-  for (const k of appKeys) expect(STRINGS.en[k], k).toBeString()
+  for (const k of appKeys) expect(typeof STRINGS.en[k], k).toBe('string')
 })
 
 test('Japanese covers index.html and every English key, with nothing extra', () => {

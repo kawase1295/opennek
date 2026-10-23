@@ -4,18 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun src/index.ts --open",
-    "dev": "bun --watch src/index.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --compile --minify --outfile dist/opennek"
+    "start": "node --disable-warning=ExperimentalWarning dist/index.js --open",
+    "dev": "tsx watch --disable-warning=ExperimentalWarning src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/index.js && node -e \"require('fs').cpSync('src/ui','dist/ui',{recursive:true,filter:(f)=>!f.endsWith('.d.ts')})\"",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
+  "engines": {
+    "node": ">=22.13"
+  },
   "devDependencies": {
-    "@types/bun": "^1.4.3",
-    "typescript": "^7.0.2"
+    "@types/node": "^22.20.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   }
 }

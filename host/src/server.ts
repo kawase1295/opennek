@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod/v4'
@@ -6,10 +7,13 @@ import { appliesTo, runCallback } from './callbacks'
 import type { Engine, EngineEvent } from './engine'
 import { listSerialPorts } from './serial'
 import { VERSION } from './version'
-import appJs from './ui/app.js' with { type: 'text' }
-import i18nJs from './ui/i18n.js' with { type: 'text' }
-import indexHtml from './ui/index.html' with { type: 'text' }
-import styleCss from './ui/style.css' with { type: 'text' }
+
+// Next to this file: src/ui when run from source, dist/ui after the build
+const ui = (name: string) => readFileSync(new URL(`./ui/${name}`, import.meta.url), 'utf8')
+const indexHtml = ui('index.html')
+const appJs = ui('app.js')
+const i18nJs = ui('i18n.js')
+const styleCss = ui('style.css')
 
 const parse = <T>(schema: z.ZodType<T>, body: unknown) => {
   const r = schema.safeParse(body)
@@ -29,7 +33,7 @@ export function createApp(engine: Engine) {
   app.onError((err, c) => c.json({ error: err.message }, 500))
 
   // --- UI
-  app.get('/', (c) => c.html(indexHtml as unknown as string)) // bun-types は .html を HTMLBundle と型付けするが type: 'text' なので文字列
+  app.get('/', (c) => c.html(indexHtml))
   app.get('/app.js', (c) => c.body(appJs, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }))
   app.get('/i18n.js', (c) => c.body(i18nJs, 200, { 'Content-Type': 'text/javascript; charset=utf-8' }))
   app.get('/style.css', (c) => c.body(styleCss, 200, { 'Content-Type': 'text/css; charset=utf-8' }))
