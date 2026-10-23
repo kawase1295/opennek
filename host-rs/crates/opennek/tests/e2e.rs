@@ -149,7 +149,7 @@ async fn changing_the_port_reconnects_the_receiver() {
     // tuned to the saved frequency and asked for its status
     eventually("commands", || {
         let w = streamer.written.lock().unwrap().clone();
-        (w == ["F923200000", "?"]).then_some(())
+        (w == ["F923200000", "C1", "?"]).then_some(())
     });
 
     let res = opennek::server::router(host.clone())

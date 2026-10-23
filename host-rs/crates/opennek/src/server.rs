@@ -99,6 +99,7 @@ async fn save_settings(State(host): Shared, Json(patch): Json<Value>) -> ApiResu
     if after.sigfox_port != before.sigfox_port || after.sigfox_freq != before.sigfox_freq {
         host.radio.reconnect();
     }
+    host.radio.set_follow(after.sigfox_downlink);
     to_json(after)
 }
 

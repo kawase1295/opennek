@@ -548,10 +548,15 @@ impl Store {
         Ok(r)
     }
 
-    pub fn set_downlink_status(&self, id: i64, status: DownlinkStatus) -> Result<Option<Message>> {
+    pub fn update_downlink(
+        &self,
+        id: i64,
+        downlink: Option<String>,
+        status: DownlinkStatus,
+    ) -> Result<Option<Message>> {
         self.db().execute(
-            "UPDATE messages SET downlink_status = ? WHERE id = ?",
-            params![status.as_str(), id],
+            "UPDATE messages SET downlink = ?, downlink_status = ? WHERE id = ?",
+            params![downlink, status.as_str(), id],
         )?;
         self.get_message(id)
     }

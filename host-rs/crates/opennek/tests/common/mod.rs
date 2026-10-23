@@ -32,7 +32,11 @@ pub struct FakeStreamer {
     pub opened: Arc<Mutex<Vec<String>>>,
     /// Paths that fail to open, with the error
     pub broken: Arc<Mutex<Vec<String>>>,
+    /// Answers a command with a line, as firmware-lsm100a does ("D ok" for a T command)
+    pub answer: Arc<Mutex<Option<Answer>>>,
 }
+
+pub type Answer = Box<dyn FnMut(&str) -> Option<String> + Send>;
 
 impl FakeStreamer {
     pub fn with_lines(lines: Vec<String>) -> Self {
@@ -55,6 +59,9 @@ impl LinePort for FakePort {
 
     fn write_line(&mut self, line: &str) -> io::Result<()> {
         self.0.written.lock().unwrap().push(line.to_string());
+        if let Some(reply) = self.0.answer.lock().unwrap().as_mut().and_then(|a| a(line)) {
+            self.0.lines.lock().unwrap().push_back(reply);
+        }
         Ok(())
     }
 }
@@ -81,4 +88,54 @@ pub fn eventually<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
         std::thread::sleep(Duration::from_millis(10));
     }
     panic!("timed out waiting for {what}");
+}
+
+/// A cfo-capture recording as the streamer sent it: R and C lines, and a status line wherever it was retuned
+pub fn cfo_streamer_lines(file: &str) -> Vec<String> {
+    use base64::Engine as _;
+    let d: serde_json::Value = serde_json::from_slice(&std::fs::read(fixture(file)).unwrap()).unwrap();
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(d["raw"].as_str().unwrap())
+        .unwrap();
+    let status = |f: u64| format!("I fw=0.3.0 f={f} bw=10 sr=2000 boost=1 cfo=1 pd=4");
+    let mut tuning: Vec<(u64, u64)> = d["tuning"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| (t["at"].as_u64().unwrap(), t["freq"].as_u64().unwrap()))
+        .collect();
+    if tuning.is_empty() {
+        tuning.push((0, 923_200_000));
+    }
+    let mut lines = vec![];
+    for (n, seq) in d["rssiSeq"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s.as_u64().unwrap())
+        .enumerate()
+    {
+        let n = n as u64;
+        for &(at, freq) in &tuning {
+            if at >= n * 64 && at < (n + 1) * 64 {
+                lines.push(status(freq));
+            }
+        }
+        let h = format!("{:04X}", seq & 0xffff);
+        let chunk = &raw[(n * 64) as usize..((n + 1) * 64) as usize];
+        lines.push(format!(
+            "R{h}:{}",
+            chunk.iter().map(|b| format!("{b:02X}")).collect::<String>()
+        ));
+        if let Some(c) = d["cfo"].get(seq.to_string()) {
+            let values: String = c
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| format!("{:03X}", v.as_i64().unwrap() & 0xfff))
+                .collect();
+            lines.push(format!("C{h}:{values}"));
+        }
+    }
+    lines
 }

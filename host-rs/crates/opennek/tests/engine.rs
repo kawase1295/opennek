@@ -23,6 +23,7 @@ fn message(counter: u16, rssi: f32) -> RadioEvent {
         },
         received_at: 1_000,
         first_frame_end_at: None,
+        uplink_freq_hz: None,
     })
 }
 
