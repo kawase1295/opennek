@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: host-rs
       # The pty tests need socat; they are skipped where it is missing (Windows)
       - if: runner.os == 'Linux'
         run: sudo apt-get install -y socat
