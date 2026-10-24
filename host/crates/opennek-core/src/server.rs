@@ -69,6 +69,7 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/callbacks/{id}", put(update_callback).delete(delete_callback))
         .route("/callbacks/{id}/test", post(test_callback))
         .route("/callback-logs", get(callback_logs))
+        .route("/logs", get(logs))
         .route("/events", get(events));
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
@@ -264,6 +265,11 @@ async fn callback_logs(State(host): Shared, Query(q): Query<HashMap<String, Stri
         .store()
         .list_logs(number(&q, "callback"), number(&q, "message"), number(&q, "limit"))?;
     to_json(logs)
+}
+
+// The host's log, oldest first
+async fn logs(State(host): Shared) -> ApiResult {
+    to_json(host.engine.logs())
 }
 
 fn sse_event(e: &Event) -> sse::Event {

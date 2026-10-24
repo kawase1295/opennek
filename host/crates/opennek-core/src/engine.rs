@@ -12,6 +12,7 @@ use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
 use crate::callbacks::{CallbackResult, applies_to, run_callback};
+use crate::console::{CONSOLE_LINES, ConsoleBuffer, ConsoleLine, radio_line};
 use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
 use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitter, now_ms};
@@ -53,6 +54,10 @@ pub struct Engine {
     recent: Mutex<HashMap<(DeviceId, u16), i64>>,
     /// Weak: the radio that transmits also feeds the engine
     transmitter: OnceLock<Weak<dyn Transmitter>>,
+    /// The latest console lines, for the UI's log
+    logs: Mutex<ConsoleBuffer>,
+    /// The receiver's state as last logged
+    radio_line: Mutex<String>,
 }
 
 /// What a downlink needs to know about the uplink it answers
@@ -86,6 +91,8 @@ impl Engine {
             events: broadcast::channel(EVENT_BUFFER).0,
             recent: Mutex::new(HashMap::new()),
             transmitter: OnceLock::new(),
+            logs: Mutex::new(ConsoleBuffer::new(CONSOLE_LINES)),
+            radio_line: Mutex::new(String::new()),
         }
     }
 
@@ -103,12 +110,40 @@ impl Engine {
     }
 
     pub fn console(&self, line: String) {
-        self.emit(Event::Console { line, time: now_ms() });
+        let time = now_ms();
+        let line_for_log = ConsoleLine {
+            line: line.clone(),
+            time,
+        };
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).push(line_for_log);
+        self.emit(Event::Console { line, time });
+    }
+
+    /// The latest console lines, oldest first
+    pub fn logs(&self) -> Vec<ConsoleLine> {
+        self.logs.lock().unwrap_or_else(|e| e.into_inner()).lines()
+    }
+
+    // Every status goes to the UI; the log gets a line only when the state changes, not for every frame counted
+    fn radio_status(&self, status: RadioStatus) {
+        let line = radio_line(&status);
+        self.emit(Event::Radio { status });
+        let changed = {
+            let mut last = self.radio_line.lock().unwrap_or_else(|e| e.into_inner());
+            let changed = *last != line;
+            if changed {
+                last.clone_from(&line);
+            }
+            changed
+        };
+        if changed {
+            self.console(line);
+        }
     }
 
     pub fn handle_radio(self: &Arc<Self>, e: RadioEvent) {
         match e {
-            RadioEvent::Status(status) => self.emit(Event::Radio { status }),
+            RadioEvent::Status(status) => self.radio_status(status),
             RadioEvent::Log(line) => self.console(line),
             RadioEvent::Message(m) => {
                 if let Err(e) = self.handle_sigfox(&m) {
