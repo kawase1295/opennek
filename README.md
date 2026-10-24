@@ -158,6 +158,8 @@ scripts/check     # what CI runs: format, lint and test the host, test the UI st
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
+(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/RadioStreamer/src \
+  streamer_native_test.cpp ../lib/RadioStreamer/src/*.cpp -o streamer_test && ./streamer_test)
 ```
 
 The host tests decode recorded captures of real Sigfox devices end to end (uplink → callback → downlink) through
