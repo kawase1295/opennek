@@ -1,5 +1,5 @@
-use opennek::platform::Os;
-use opennek::serial::{ListedPort, PortInfo, UsbInfo, to_port_list};
+use opennek_core::platform::Os;
+use opennek_core::serial::{ListedPort, PortInfo, UsbInfo, to_port_list};
 
 fn espressif() -> Option<UsbInfo> {
     Some(UsbInfo {

@@ -852,13 +852,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "opennek"
+name = "opennek-cli"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "clap",
+ "opennek-core",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "opennek-core"
 version = "0.1.1"
 dependencies = [
  "axum",
  "base64 0.23.1",
  "chrono",
- "clap",
  "http-body-util",
  "rusqlite",
  "serde",

@@ -3,7 +3,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
-use opennek::radio::{Radio, RadioEvent, RadioSettings, RadioState};
+use opennek_core::radio::{Radio, RadioEvent, RadioSettings, RadioState};
 
 fn radio(streamer: &FakeStreamer, port: &str) -> (Radio, Arc<Mutex<Vec<RadioEvent>>>) {
     let events = Arc::new(Mutex::new(vec![]));
@@ -55,7 +55,7 @@ fn messages_carry_the_wall_clock_time_of_their_frames() {
     // All lines arrive at once, so each message is dated back from when its third frame was decoded: three frames
     // of ~1.3 s with two 2.4 s gaps, plus the time to notice the end of the last one
     let ms = |s: f64| (s * 1000.0).round() as i64;
-    let now = opennek::radio::now_ms();
+    let now = opennek_core::radio::now_ms();
     for m in &messages {
         let age = now - m.received_at;
         assert!((8_000..12_000).contains(&age), "seq {}: {age}", m.message.counter);

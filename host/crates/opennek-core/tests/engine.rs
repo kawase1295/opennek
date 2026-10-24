@@ -1,6 +1,6 @@
-use opennek::engine::Engine;
-use opennek::radio::{RadioEvent, RadioMessage};
-use opennek::store::{MessageQuery, Store};
+use opennek_core::engine::Engine;
+use opennek_core::radio::{RadioEvent, RadioMessage};
+use opennek_core::store::{MessageQuery, Store};
 use sigfox::frame::DeviceId;
 use sigfox::receiver::SigfoxMessage;
 
@@ -57,7 +57,7 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_u
     // reported as received (pending), then settled
     let statuses: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
         .filter_map(|e| match e {
-            opennek::engine::Event::Message { message } => {
+            opennek_core::engine::Event::Message { message } => {
                 Some(serde_json::to_value(message.fields.downlink_status).unwrap())
             }
             _ => None,
@@ -72,7 +72,7 @@ fn an_oob_frame_that_is_not_a_control_message_is_decoded_with_the_payload_config
     let body = serde_json::json!({ "payloadConfig": "v::uint:8" });
     engine
         .store()
-        .upsert_device(&opennek::store::DeviceInput::parse("00763DA3", body).unwrap(), 0)
+        .upsert_device(&opennek_core::store::DeviceInput::parse("00763DA3", body).unwrap(), 0)
         .unwrap();
     let RadioEvent::Message(mut m) = message(3, -80.0) else {
         unreachable!()

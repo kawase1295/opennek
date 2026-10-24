@@ -1,5 +1,5 @@
-use opennek::downlink::{DownlinkContext, parse_downlink_template, render_downlink};
-use opennek::store::DeviceInput;
+use opennek_core::downlink::{DownlinkContext, parse_downlink_template, render_downlink};
+use opennek_core::store::DeviceInput;
 use serde_json::json;
 
 const CTX: DownlinkContext<'static> = DownlinkContext {

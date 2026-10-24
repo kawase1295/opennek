@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use common::{FakeStreamer, cfo_streamer_lines, eventually};
-use opennek::radio::{DownlinkTx, Radio, RadioEvent, RadioSettings, RadioState, Transmitter, now_ms};
+use opennek_core::radio::{DownlinkTx, Radio, RadioEvent, RadioSettings, RadioState, Transmitter, now_ms};
 use sigfox::frame::DeviceId;
 
 const FRAME: [u8; 15] = [
@@ -177,7 +177,7 @@ fn without_a_receiver_nothing_is_sent() {
     assert!(!radio.transmit(&downlink(5000)));
 }
 
-fn messages(s: &Setup) -> Vec<opennek::radio::RadioMessage> {
+fn messages(s: &Setup) -> Vec<opennek_core::radio::RadioMessage> {
     s.events
         .lock()
         .unwrap()

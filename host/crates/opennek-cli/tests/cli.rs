@@ -26,7 +26,7 @@ fn rejects_an_unknown_argument() {
 
 mod options {
     use clap::Parser;
-    use opennek::cli::Args;
+    use opennek_cli::cli::Args;
 
     fn parse(args: &[&str]) -> Args {
         Args::try_parse_from(std::iter::once("opennek").chain(args.iter().copied())).unwrap()
@@ -56,7 +56,7 @@ mod options {
 #[test]
 fn install_is_a_subcommand() {
     use clap::Parser;
-    use opennek::cli::{Args, Command};
+    use opennek_cli::cli::{Args, Command};
     let a = Args::try_parse_from(["opennek", "install"]).unwrap();
     assert!(matches!(a.command, Some(Command::Install)));
     let a = Args::try_parse_from(["opennek", "uninstall"]).unwrap();
