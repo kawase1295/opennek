@@ -158,7 +158,7 @@ fn an_older_streamer_is_not_asked_to_transmit() {
         s.logs()
             .last()
             .unwrap()
-            .contains("firmware-lsm100a 0.3.0 or later needed (fw=0.2.0)")
+            .contains("streamer firmware 0.3.0 or later needed (fw=0.2.0)")
     );
     s.radio.stop();
 }
@@ -250,7 +250,7 @@ fn a_pre_release_firmware_is_not_taken_for_0_3_0() {
         s.logs()
             .last()
             .unwrap()
-            .contains("firmware-lsm100a 0.3.0 or later needed (fw=0.3.0-rc1)")
+            .contains("streamer firmware 0.3.0 or later needed (fw=0.3.0-rc1)")
     );
     s.radio.stop();
 }

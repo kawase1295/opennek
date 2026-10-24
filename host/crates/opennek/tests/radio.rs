@@ -135,3 +135,39 @@ fn a_sample_that_is_not_hex_reads_as_0_and_keeps_the_line() {
     radio.stop();
     assert_eq!(radio.status().lost_lines, 0);
 }
+
+#[test]
+fn a_silent_port_points_at_the_radio_firmware() {
+    let streamer = FakeStreamer::default();
+    let (radio, _) = radio(&streamer, "fake0");
+    radio.start();
+    let error = eventually("an error", || radio.status().error);
+    radio.stop();
+    assert!(error.contains("pio run -e radio-xiao-sx1262 -t upload"), "{error}");
+    assert!(error.contains("firmware-lsm100a"), "{error}");
+}
+
+#[test]
+fn a_firmware_error_is_the_radio_error_until_samples_arrive() {
+    let reason = "radio not found (is the Wio-SX1262 plugged in?)";
+    let streamer = FakeStreamer::with_lines(vec![format!("E {reason}\r")]);
+    let (radio, events) = radio(&streamer, "fake0");
+    radio.start();
+    eventually("the firmware error", || {
+        (radio.status().error.as_deref() == Some(reason)).then_some(())
+    });
+    // The stall check, which asks again every second, keeps it
+    std::thread::sleep(std::time::Duration::from_millis(4500));
+    let status = radio.status();
+    assert_eq!(
+        (status.state, status.error.as_deref()),
+        (RadioState::Connecting, Some(reason))
+    );
+    assert!(logs(&events).contains(&format!("sigfox: {reason}")));
+    streamer.lines.lock().unwrap().push_back("R0000:F0F0".into());
+    eventually("connected", || {
+        let s = radio.status();
+        (s.state == RadioState::Connected && s.error.is_none()).then_some(())
+    });
+    radio.stop();
+}

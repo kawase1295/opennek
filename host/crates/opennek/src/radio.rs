@@ -1,8 +1,9 @@
-//! Real Sigfox RC3 uplinks from the OpenNEK RSSI streamer (firmware-lsm100a, usually behind the ESP32-S3
-//! bridge). The streamer sends "I fw=.. f=.. bw=.. sr=.. boost=.." status lines, "R<seq>:<hex>" sample lines and,
+//! Real Sigfox RC3 uplinks from the OpenNEK RSSI streamer: radio-xiao-sx1262 on the XIAO ESP32S3 & Wio-SX1262 kit,
+//! or firmware-lsm100a (usually behind the ESP32-S3 bridge), which speak the same protocol. The streamer sends "I fw=.. f=.. bw=.. sr=.. boost=.." status lines, "R<seq>:<hex>" sample lines and,
 //! from fw 0.2.0, "C<seq>:<hex>" CFO lines that give the frequency of each frame (sigfox::frequency). From fw 0.3.0
 //! it also transmits the downlinks: "T<hz>,<dBm>,<hex>" answered by "D <result>", allowed with "E1" only around
 //! each transmission. The firmware enforces the channel, the power cap, carrier sense and the transmit-time limits.
+//! "E <reason>" says why it cannot stream, e.g. that the radio is missing; it becomes the status error.
 //!
 //! One thread owns the port: it opens it, reads lines with a short timeout and reopens it after an error. A
 //! reconnect or stop bumps the generation, which the thread notices between reads. Other threads write to the port
@@ -27,7 +28,7 @@ const DEFAULT_RATE: u32 = 2000;
 const RATES: std::ops::RangeInclusive<u32> = 100..=100_000;
 /// The streamer's receive bandwidth (RX_BW code), which sets the Hz per CFO step
 const STREAMER_BW: u8 = 0x0a;
-/// The first firmware-lsm100a that transmits
+/// The first streamer firmware that transmits
 const TX_FW: [u32; 3] = [0, 3, 0];
 /// The firmware's maximum
 const TX_DBM: i32 = 10;
@@ -35,6 +36,8 @@ const TX_DBM: i32 = 10;
 const TX_REPLY: Duration = Duration::from_secs(2);
 /// After "busy": the channel was in use
 const TX_RETRY: Duration = Duration::from_millis(200);
+const NO_REPLY: &str = "No reply from the RSSI streamer (flash the XIAO ESP32S3 & Wio-SX1262 kit with \
+    `pio run -e radio-xiao-sx1262 -t upload`, or an LSM100A with firmware-lsm100a and connect at 115200 bps)";
 
 /// A line-oriented connection to the receiver. `read_line` returns None when nothing arrived for a while.
 pub trait LinePort: Send {
@@ -311,7 +314,7 @@ impl Transmitter for Radio {
         };
         if !at_least(status.fw.as_deref(), TX_FW) {
             let fw = status.fw.as_deref().unwrap_or("?");
-            return self.tx_failed(&format!("firmware-lsm100a 0.3.0 or later needed (fw={fw})"));
+            return self.tx_failed(&format!("streamer firmware 0.3.0 or later needed (fw={fw})"));
         }
         if self.shared.tx_busy.swap(true, Ordering::SeqCst) {
             return self.tx_failed("another downlink is being sent");
@@ -375,6 +378,8 @@ struct Link<'a> {
     tracker: Option<FrequencyTracker>,
     last_seq: Option<u16>,
     last_sample: Instant,
+    /// The firmware's last "E" reason since it last streamed, which a stall reports instead of NO_REPLY
+    fw_error: Option<String>,
 }
 
 impl<'a> Link<'a> {
@@ -393,6 +398,7 @@ impl<'a> Link<'a> {
             tracker: None,
             last_seq: None,
             last_sample: Instant::now(),
+            fw_error: None,
         }
     }
 
@@ -466,11 +472,21 @@ impl<'a> Link<'a> {
         if self.last_sample.elapsed() < STALL {
             return Ok(());
         }
+        let error = self.fw_error.clone().unwrap_or_else(|| NO_REPLY.into());
         self.shared.update(|s| {
             s.state = RadioState::Connecting;
-            s.error = Some("No reply from the RSSI streamer (flash firmware-lsm100a and connect at 115200 bps)".into());
+            s.error = Some(error);
         });
         self.write("?")
+    }
+
+    fn firmware_error(&mut self, reason: &str) {
+        self.shared.log(format!("sigfox: {reason}"));
+        self.fw_error = Some(reason.to_string());
+        self.shared.update(|s| {
+            s.state = RadioState::Connecting;
+            s.error = Some(reason.to_string());
+        });
     }
 
     fn handle_line(&mut self, raw: &str) {
@@ -479,6 +495,8 @@ impl<'a> Link<'a> {
             if let Some(reply) = self.reply.take() {
                 let _ = reply.send(result.trim().to_string());
             }
+        } else if let Some(reason) = line.strip_prefix("E ").map(str::trim).filter(|r| !r.is_empty()) {
+            self.firmware_error(reason);
         } else if let Some(status) = line.strip_prefix("I ") {
             self.status_line(status);
         } else if let Some((seq, hex)) = sample_line(line, 'R') {
@@ -507,6 +525,7 @@ impl<'a> Link<'a> {
         if self.rx.as_ref().is_none_or(|rx| rx.rate() != rate) {
             self.start_receiver(rate);
         }
+        self.fw_error = None;
         let fw = field("fw");
         let freq = field("f").and_then(|v| v.parse().ok()).filter(|&f: &u32| f != 0);
         if let (Some(f), Some(tracker)) = (freq, self.tracker.as_mut()) {
@@ -548,6 +567,7 @@ impl<'a> Link<'a> {
         }
         self.last_seq = Some(seq);
         self.last_sample = Instant::now();
+        self.fw_error = None;
         if self.rx.is_none() {
             self.start_receiver(DEFAULT_RATE);
         }
