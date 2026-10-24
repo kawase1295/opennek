@@ -86,3 +86,54 @@ fn an_oob_frame_that_is_not_a_control_message_is_decoded_with_the_payload_config
         (true, Some(serde_json::json!({ "v": 0x11 })))
     );
 }
+
+fn console_lines(engine: &Engine) -> Vec<String> {
+    engine.logs().into_iter().map(|l| l.line).collect()
+}
+
+#[test]
+fn console_lines_are_kept_with_their_time() {
+    let engine = Engine::new(Store::open_in_memory().unwrap());
+    let before = opennek_core::radio::now_ms();
+    engine.console("one".into());
+    engine.console("two".into());
+    let logs = engine.logs();
+    assert_eq!(console_lines(&engine), ["one", "two"]);
+    assert!(logs.iter().all(|l| l.time >= before));
+}
+
+#[test]
+fn the_engine_keeps_the_most_recent_console_lines() {
+    let engine = Engine::new(Store::open_in_memory().unwrap());
+    for n in 0..=opennek_core::console::CONSOLE_LINES {
+        engine.console(format!("line {n}"));
+    }
+    let lines = console_lines(&engine);
+    assert_eq!(lines.len(), opennek_core::console::CONSOLE_LINES);
+    assert_eq!(lines[0], "line 1");
+}
+
+#[test]
+fn the_receiver_state_is_logged_when_it_changes() {
+    use opennek_core::radio::{RadioState, RadioStatus};
+    let engine = std::sync::Arc::new(Engine::new(Store::open_in_memory().unwrap()));
+    let mut events = engine.subscribe();
+    let connected = RadioStatus {
+        state: RadioState::Connected,
+        port: Some("fake0".into()),
+        ..Default::default()
+    };
+    engine.handle_radio(RadioEvent::Status(connected.clone()));
+    // a frame counted is not a change worth a line
+    engine.handle_radio(RadioEvent::Status(RadioStatus {
+        frames: 1,
+        ..connected.clone()
+    }));
+    engine.handle_radio(RadioEvent::Status(RadioStatus::default()));
+    assert_eq!(console_lines(&engine), ["sigfox: connected fake0", "sigfox: off"]);
+    // each status is still sent to the UI, and each logged line as a console event
+    let names: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
+        .map(|e| e.name())
+        .collect();
+    assert_eq!(names, ["radio", "console", "radio", "radio", "console"]);
+}

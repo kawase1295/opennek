@@ -119,9 +119,22 @@ async fn the_ui_is_served_from_the_binary() {
         "/api/messages",
         "/api/settings",
         "/api/callback-logs",
+        "/api/logs",
     ] {
         get_json(&host, path).await;
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_log_is_served_oldest_first() {
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    host.engine.console("first".into());
+    host.engine.console("second".into());
+    let logs = get_json(&host, "/api/logs").await;
+    let lines: Vec<_> = logs.as_array().unwrap().iter().map(|l| l["line"].clone()).collect();
+    assert_eq!(lines, [json!("first"), json!("second")]);
+    let now = chrono::Utc::now().timestamp_millis();
+    assert!((now - logs[0]["time"].as_i64().unwrap()).abs() < 60_000);
 }
 
 #[tokio::test(flavor = "multi_thread")]
