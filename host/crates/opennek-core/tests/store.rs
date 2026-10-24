@@ -1,4 +1,4 @@
-use opennek::store::{Auth, DownlinkStatus, MessageQuery, NewMessage, Settings, Store};
+use opennek_core::store::{Auth, DownlinkStatus, MessageQuery, NewMessage, Settings, Store};
 use serde_json::json;
 
 fn uplink(device_id: &str, seq: u16) -> NewMessage {

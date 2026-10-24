@@ -1,4 +1,4 @@
-use opennek::payload::{decode_payload, parse_payload_config};
+use opennek_core::payload::{decode_payload, parse_payload_config};
 use serde_json::json;
 
 fn bytes(h: &str) -> Vec<u8> {

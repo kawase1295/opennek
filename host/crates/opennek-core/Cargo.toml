@@ -1,6 +1,6 @@
 [package]
-name = "opennek"
-description = "Local network for real Sigfox devices: decode their uplinks from a USB receiver, run Sigfox-compatible callbacks and send downlinks"
+name = "opennek-core"
+description = "The OpenNEK host shared by its front ends: decode Sigfox uplinks from a USB receiver, run Sigfox-compatible callbacks, send downlinks and serve the web UI"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 axum = "0.8.9"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
-clap = { version = "4.6.7", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }

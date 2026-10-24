@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use opennek::install::{InstallPaths, desktop_entry, install, uninstall};
+use opennek_cli::install::{InstallPaths, desktop_entry, install, uninstall};
 
 fn paths(home: &Path) -> InstallPaths {
     InstallPaths::new(home, None)

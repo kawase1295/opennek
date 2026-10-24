@@ -1,24 +1,21 @@
-use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use clap::Parser;
-use opennek::cli::{Args, Command};
-use opennek::engine::Event;
-use opennek::host::Host;
-use opennek::install::{InstallPaths, install, uninstall};
-use opennek::platform::{Os, browser_command, default_data_dir};
-use opennek::serial::SerialOpener;
-use opennek::store::{DownlinkStatus, Store};
+use opennek_cli::cli::{Args, Command};
+use opennek_cli::install::{InstallPaths, install, uninstall};
+use opennek_core::engine::Event;
+use opennek_core::platform::{Os, browser_command};
+use opennek_core::store::DownlinkStatus;
+use opennek_core::{Options, start};
 use serde_json::json;
+use tokio::sync::broadcast;
 
 fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
 // One line per event on the console; radio status lines only when they change (not for every frame counted)
-fn print_events(host: &Host) {
-    let mut events = host.engine.subscribe();
+fn print_events(mut events: broadcast::Receiver<Event>) {
     tokio::spawn(async move {
         let mut last_radio = String::new();
         while let Ok(e) = events.recv().await {
@@ -73,28 +70,6 @@ fn print_events(host: &Host) {
     });
 }
 
-fn open_store(args: &Args) -> Result<(Store, PathBuf), String> {
-    let home = std::env::home_dir().unwrap_or_default();
-    let dir = args
-        .data
-        .clone()
-        .unwrap_or_else(|| default_data_dir(Os::current(), |k| std::env::var(k).ok(), &home.to_string_lossy()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let store = Store::open(&dir.join("opennek.db")).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let mut patch = serde_json::Map::new();
-    if let Some(port) = &args.sigfox {
-        patch.insert("sigfoxPort".into(), json!(if port == "off" { "" } else { port }));
-    }
-    if let Some(freq) = args.sigfox_freq {
-        patch.insert("sigfoxFreq".into(), json!(freq));
-    }
-    if !patch.is_empty() {
-        let settings = store.settings().map_err(|e| e.to_string())?.merged(patch.into())?;
-        store.save_settings(&settings).map_err(|e| e.to_string())?;
-    }
-    Ok((store, dir))
-}
-
 // install / uninstall: the app menu entry on Linux
 fn manage_install(command: &Command) -> ExitCode {
     if Os::current() != Os::Linux {
@@ -132,44 +107,38 @@ async fn main() -> ExitCode {
     if let Some(command) = &args.command {
         return manage_install(command);
     }
-    let (store, dir) = match open_store(&args) {
-        Ok(s) => s,
+    let options = Options {
+        data_dir: args.data.clone(),
+        host: args.host.clone(),
+        port: args.port,
+        sigfox_port: args.sigfox.clone(),
+        sigfox_freq: args.sigfox_freq,
+    };
+    let mut running = match start(options).await {
+        Ok(r) => r,
         Err(e) => {
             eprintln!("opennek: {e}");
             return ExitCode::FAILURE;
         }
     };
-    let host = Host::new(store, Box::new(SerialOpener));
-    print_events(&host);
-
-    let listener = match tokio::net::TcpListener::bind((args.host.as_str(), args.port)).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("opennek: cannot listen on {}:{}: {e}", args.host, args.port);
-            return ExitCode::FAILURE;
-        }
-    };
-    let shown = if args.host == "0.0.0.0" {
-        "localhost"
-    } else {
-        &args.host
-    };
-    let url = format!("http://{shown}:{}/", args.port);
-    println!("OpenNEK {} — {url}  data: {}", env!("CARGO_PKG_VERSION"), dir.display());
+    println!(
+        "OpenNEK {} — {}  data: {}",
+        env!("CARGO_PKG_VERSION"),
+        running.url,
+        running.data_dir.display()
+    );
+    // the events wait for the line above, so it comes first
+    print_events(running.take_events());
     if args.opens_browser() {
-        let (cmd, cmd_args) = browser_command(Os::current(), &url);
+        let (cmd, cmd_args) = browser_command(Os::current(), &running.url);
         // a missing browser is not worth failing over; the URL is printed above
         let _ = std::process::Command::new(cmd).args(cmd_args).spawn();
     }
-    host.radio.start();
 
-    let server = axum::serve(listener, opennek::server::router(host.clone()));
-    // Event streams stay open, so the server is dropped instead of waiting for them to close
     tokio::select! {
-        r = server => if let Err(e) = r { eprintln!("opennek: {e}") },
+        r = running.stopped() => if let Err(e) = r { eprintln!("opennek: {e}") },
         _ = tokio::signal::ctrl_c() => {},
     }
-    let radio_host = Arc::clone(&host);
-    let _ = tokio::task::spawn_blocking(move || radio_host.radio.stop()).await;
+    running.shutdown().await;
     ExitCode::SUCCESS
 }

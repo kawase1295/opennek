@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use opennek::platform::{Os, browser_command, default_data_dir};
+use opennek_core::platform::{Os, browser_command, default_data_dir};
 
 fn env(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
     let vars: Vec<(String, String)> = vars.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();

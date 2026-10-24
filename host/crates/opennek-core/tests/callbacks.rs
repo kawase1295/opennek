@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use opennek::callbacks::{encode_uri_component, extract_downlink, render_template};
+use opennek_core::callbacks::{encode_uri_component, extract_downlink, render_template};
 
 fn vars(pairs: &[(&str, &str)]) -> HashMap<String, String> {
     pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
@@ -54,6 +54,9 @@ fn extract_downlink_accepts_sigfox_style_and_flat_responses() {
 #[test]
 fn responses_are_cut_at_2000_utf16_units_like_javascript() {
     let long = "😀".repeat(1500);
-    assert_eq!(opennek::callbacks::truncate_utf16(&long, 2000).chars().count(), 1000);
-    assert_eq!(opennek::callbacks::truncate_utf16("abc", 2000), "abc");
+    assert_eq!(
+        opennek_core::callbacks::truncate_utf16(&long, 2000).chars().count(),
+        1000
+    );
+    assert_eq!(opennek_core::callbacks::truncate_utf16("abc", 2000), "abc");
 }

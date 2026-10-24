@@ -1,5 +1,5 @@
 // The OpenNEK RSSI streamer's serial protocol (115200 bps, one line per command or report), shared by every
-// radio that speaks it. See firmware-lsm100a/README.md for the table; host/crates/opennek/src/radio.rs is the
+// radio that speaks it. See firmware-lsm100a/README.md for the table; host/crates/opennek-core/src/radio.rs is the
 // other end. No I/O here: the firmware feeds characters in and writes the formatted lines out.
 #pragma once
 

@@ -92,7 +92,7 @@ jobs:
           workspaces: host
           key: ${{ matrix.target }}
       - working-directory: host
-        run: cargo build --release --locked --package opennek --target ${{ matrix.target }}
+        run: cargo build --release --locked --package opennek-cli --target ${{ matrix.target }}
       - run: |
           mkdir dist
           cp "host/target/${{ matrix.target }}/release/opennek${{ matrix.ext }}" "dist/$NAME"

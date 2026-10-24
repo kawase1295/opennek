@@ -9,10 +9,10 @@ use axum::http::{HeaderMap, Request, StatusCode, Uri};
 use axum::routing::any;
 use common::{FakeStreamer, fixture, streamer_lines};
 use http_body_util::BodyExt;
-use opennek::engine::Engine;
-use opennek::host::Host;
-use opennek::radio::{RadioEvent, RadioMessage};
-use opennek::store::{CallbackInput, Store};
+use opennek_core::engine::Engine;
+use opennek_core::host::Host;
+use opennek_core::radio::{RadioEvent, RadioMessage};
+use opennek_core::store::{CallbackInput, Store};
 use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
 use sigfox::frame::{DeviceId, UplinkFields};
@@ -75,7 +75,7 @@ async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) ->
         .uri(path)
         .header("content-type", "application/json");
     let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
-    let res = opennek::server::router(host.clone())
+    let res = opennek_core::server::router(host.clone())
         .oneshot(req.body(body).unwrap())
         .await
         .unwrap();
@@ -180,7 +180,7 @@ fn uplink(key: &[u8; 16], counter: u16, downlink: bool) -> RadioEvent {
             frames: vec![],
             clock_error_ppm: 0,
         },
-        received_at: opennek::radio::now_ms(),
+        received_at: opennek_core::radio::now_ms(),
         first_frame_end_at: None,
         uplink_freq_hz: None,
     })
@@ -312,15 +312,15 @@ async fn a_callback_response_can_carry_downlink_data() {
     let mut cb = callback(&format!("{url}/"), "{}");
     cb.downlink = true;
     let cb = store.create_callback(&cb).unwrap();
-    let message = opennek::callbacks::dummy_message(true);
-    let message = opennek::store::Message {
-        fields: opennek::store::NewMessage {
+    let message = opennek_core::callbacks::dummy_message(true);
+    let message = opennek_core::store::Message {
+        fields: opennek_core::store::NewMessage {
             device_id: "0A1B2C3D".into(),
             ..message.fields
         },
         ..message
     };
-    let result = tokio::task::spawn_blocking(move || opennek::callbacks::run_callback(&cb, &message, "", 2000))
+    let result = tokio::task::spawn_blocking(move || opennek_core::callbacks::run_callback(&cb, &message, "", 2000))
         .await
         .unwrap();
     assert_eq!(result.downlink.as_deref(), Some("0102030405060708"));
@@ -372,14 +372,14 @@ async fn awkward_server() -> (String, Arc<Mutex<Vec<String>>>) {
     (url, seen)
 }
 
-fn try_callback(url: &str, extra: Value) -> opennek::callbacks::CallbackResult {
+fn try_callback(url: &str, extra: Value) -> opennek_core::callbacks::CallbackResult {
     let mut body = json!({ "url": url, "body": "b" });
     body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
-    let cb = opennek::store::Callback {
+    let cb = opennek_core::store::Callback {
         input: CallbackInput::parse(body).unwrap(),
         id: 1,
     };
-    opennek::callbacks::run_callback(&cb, &opennek::callbacks::dummy_message(false), "", 1000)
+    opennek_core::callbacks::run_callback(&cb, &opennek_core::callbacks::dummy_message(false), "", 1000)
 }
 
 #[tokio::test(flavor = "multi_thread")]

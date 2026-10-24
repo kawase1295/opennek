@@ -6,13 +6,13 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
 use http_body_util::BodyExt;
-use opennek::host::Host;
-use opennek::store::Store;
+use opennek_core::host::Host;
+use opennek_core::store::Store;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 async fn get(host: &Arc<Host>, path: &str) -> (StatusCode, String, String) {
-    let res = opennek::server::router(host.clone())
+    let res = opennek_core::server::router(host.clone())
         .oneshot(Request::get(path).body(Body::empty()).unwrap())
         .await
         .unwrap();
@@ -130,10 +130,10 @@ async fn changing_the_port_reconnects_the_receiver() {
     let host = Host::new(Store::open_in_memory().unwrap(), Box::new(streamer.clone()));
     host.radio.start();
     eventually("off", || {
-        (host.radio.status().state == opennek::radio::RadioState::Off).then_some(())
+        (host.radio.status().state == opennek_core::radio::RadioState::Off).then_some(())
     });
 
-    let res = opennek::server::router(host.clone())
+    let res = opennek_core::server::router(host.clone())
         .oneshot(
             Request::put("/api/settings")
                 .header("content-type", "application/json")
@@ -154,7 +154,7 @@ async fn changing_the_port_reconnects_the_receiver() {
             .then_some(())
     });
 
-    let res = opennek::server::router(host.clone())
+    let res = opennek_core::server::router(host.clone())
         .oneshot(
             Request::put("/api/settings")
                 .header("content-type", "application/json")
@@ -175,7 +175,7 @@ async fn send(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -
         .uri(path)
         .header("content-type", "application/json");
     let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
-    let res = opennek::server::router(host.clone())
+    let res = opennek_core::server::router(host.clone())
         .oneshot(req.body(body).unwrap())
         .await
         .unwrap();
