@@ -155,6 +155,8 @@ scripts/check     # CI と同じ検査: ホストのフォーマット・lint・
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
+(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/RadioStreamer/src \
+  streamer_native_test.cpp ../lib/RadioStreamer/src/*.cpp -o streamer_test && ./streamer_test)
 ```
 
 ホストのテストは、本物の Sigfox デバイスの録音をストリーマの行として流す偽の受信機を使い、
