@@ -228,3 +228,52 @@ async fn another_data_dir_is_another_instance() {
     first.shutdown().await;
     second.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn console_lines_start_up_and_shutdown_go_to_the_log_file() {
+    let data = tempfile::tempdir().unwrap();
+    let log = data.path().join("logs").join("opennek.log");
+    let version = env!("CARGO_PKG_VERSION");
+    for run in ["first", "second"] {
+        let running = start_with(options(data.path()), Box::new(FakeStreamer::default()))
+            .await
+            .unwrap();
+        assert_eq!(running.log_file, log);
+
+        // the status says where the log is
+        let url = running.url.clone();
+        let (_, body) = tokio::task::spawn_blocking(move || get(&url, "/api/status"))
+            .await
+            .unwrap();
+        let status: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(status["logFile"], log.to_string_lossy().as_ref(), "{body}");
+
+        running.host.engine.console(format!("hello from the {run} run"));
+        running.shutdown().await;
+    }
+
+    // a reopened host appends; every line starts with the date and time
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    let started = format!("OpenNEK {version} started");
+    let stopped = format!("OpenNEK {version} stopped");
+    let index = |s: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(s))
+            .unwrap_or_else(|| panic!("{s}: {text}"))
+    };
+    let order = [
+        index(&started),
+        index("hello from the first run"),
+        index(&stopped),
+        index("hello from the second run"),
+    ];
+    assert!(order.is_sorted(), "{text}");
+    assert_eq!(lines.iter().filter(|l| l.contains(&started)).count(), 2, "{text}");
+    assert_eq!(lines.last().map(|l| l.contains(&stopped)), Some(true), "{text}");
+    for line in &lines {
+        let date = line.get(..10).unwrap_or_default();
+        assert!(chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok(), "{line}");
+    }
+}

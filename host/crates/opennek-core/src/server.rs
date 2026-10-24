@@ -85,7 +85,12 @@ pub fn router(host: Arc<Host>) -> Router {
 
 async fn status(State(host): Shared) -> ApiResult {
     let settings = host.engine.store().settings()?;
-    to_json(json!({ "version": env!("CARGO_PKG_VERSION"), "radio": host.radio.status(), "settings": settings }))
+    to_json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "radio": host.radio.status(),
+        "settings": settings,
+        "logFile": host.log_file.get(),
+    }))
 }
 
 async fn settings(State(host): Shared) -> ApiResult {

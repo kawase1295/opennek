@@ -13,8 +13,9 @@ use tokio::task::JoinHandle;
 use crate::engine::Event;
 use crate::host::Host;
 use crate::instance::{InstanceLock, LockError};
+use crate::logfile::{LIMIT, LogFile, Logger, log_path};
 use crate::platform::{Os, default_data_dir};
-use crate::radio::Opener;
+use crate::radio::{Opener, now_ms};
 use crate::serial::SerialOpener;
 use crate::store::Store;
 
@@ -82,11 +83,14 @@ pub struct Running {
     /// The web UI, with the port actually bound
     pub url: String,
     pub data_dir: PathBuf,
+    /// Where the console lines are written (see `logfile`)
+    pub log_file: PathBuf,
     pub host: Arc<Host>,
     /// Subscribed before the radio started, so no event is missed
     events: broadcast::Receiver<Event>,
     server: JoinHandle<io::Result<()>>,
     lock: InstanceLock,
+    logger: Logger,
 }
 
 impl Running {
@@ -107,6 +111,7 @@ impl Running {
         self.server.abort();
         let host = self.host;
         let _ = tokio::task::spawn_blocking(move || host.radio.stop()).await;
+        self.logger.stop().await;
         self.lock.release();
     }
 }
@@ -149,15 +154,27 @@ pub async fn start_with(options: Options, opener: Box<dyn Opener>) -> Result<Run
     let url = format!("http://{shown}:{port}/");
     lock.publish(&url).map_err(|e| data_dir_error(e.to_string()))?;
 
+    let mut log = LogFile::new(log_path(&dir), LIMIT);
+    let version = env!("CARGO_PKG_VERSION");
+    log.write(
+        now_ms(),
+        &format!("OpenNEK {version} started on {url} (data: {})", dir.display()),
+    );
+    let log_file = log.path().to_path_buf();
+    let _ = host.log_file.set(log_file.clone());
+    let logger = Logger::spawn(log, host.engine.subscribe(), format!("OpenNEK {version} stopped"));
+
     host.radio.start();
     let server = tokio::spawn(axum::serve(listener, crate::server::router(host.clone())).into_future());
     Ok(Running {
         url,
         data_dir: dir,
+        log_file,
         host,
         events,
         server,
         lock,
+        logger,
     })
 }
 
