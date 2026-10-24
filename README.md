@@ -153,7 +153,7 @@ Pushing a version tag (`v0.2.0`, equal to the version in `host/Cargo.toml`) on m
 publishes them on GitHub Releases (`.github/workflows/release.yml`).
 
 ```bash
-scripts/check     # what CI runs: format, lint and test the host, test the UI strings and the LSM100A tools
+scripts/check     # what CI runs: format, lint and test the host, test the UI strings, the LSM100A tools and the firmware natively
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

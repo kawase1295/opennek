@@ -150,7 +150,7 @@ main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョ�
 実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
 
 ```bash
-scripts/check     # CI と同じ検査: ホストのフォーマット・lint・テスト、UI の文言、LSM100A ツールのテスト
+scripts/check     # CI と同じ検査: ホストのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

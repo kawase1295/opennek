@@ -16,3 +16,13 @@ cd "$root/tools/lsm"
 npm ci
 npm run typecheck
 npm test
+
+# The firmware's decoder and streamer logic, built natively with zig's clang into a temp dir
+cd "$root/firmware"
+build="$(mktemp -d)"
+trap 'rm -rf "$build"' EXIT
+cxx() { uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 "$@"; }
+cxx -I lib/SigfoxRx/src test/sigfox_native_test.cpp lib/SigfoxRx/src/*.cpp -o "$build/sigfox_test.exe"
+"$build/sigfox_test.exe" "$root/fixtures"
+cxx -I lib/RadioStreamer/src test/streamer_native_test.cpp lib/RadioStreamer/src/*.cpp -o "$build/streamer_test.exe"
+"$build/streamer_test.exe"
