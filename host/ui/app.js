@@ -1,5 +1,5 @@
 // OpenNEK Web UI (ビルド不要の素の JS)
-import { LANGUAGES, lang, setLang, t, translatePage } from './i18n.js'
+import { chooseLang, LANGUAGES, lang, setLang, t, takeLegacyLang, translatePage } from './i18n.js'
 
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
@@ -423,20 +423,38 @@ function connectEvents() {
 }
 
 // ---------------- language
-const langSel = $('#lang')
-langSel.innerHTML = Object.entries(LANGUAGES)
-  .map(([code, name]) => `<option value="${code}">${name}</option>`)
-  .join('')
-langSel.value = lang
-// 動的に組み立てた部分も含めて描き直すのは手間なので、言語を覚えて読み込み直す
-langSel.addEventListener('change', () => {
-  setLang(langSel.value)
-  location.reload()
-})
+// 文字列を出す前に設定から言語を決める。旧版が localStorage に覚えた言語は一度だけ設定へ移す
+async function loadLang() {
+  const saved = await api('/settings').then((s) => s.language, () => undefined)
+  const choice = chooseLang(saved, takeLegacyLang())
+  setLang(choice.lang)
+  if (choice.migrate) await api('/settings', { method: 'PUT', body: { language: choice.lang } }).catch(() => {})
+}
+
+function setupLangSelect() {
+  const langSel = $('#lang')
+  langSel.innerHTML = Object.entries(LANGUAGES)
+    .map(([code, name]) => `<option value="${code}">${name}</option>`)
+    .join('')
+  langSel.value = lang
+  // 動的に組み立てた部分も含めて描き直すのは手間なので、設定に保存して読み込み直す
+  langSel.addEventListener('change', async () => {
+    try {
+      await api('/settings', { method: 'PUT', body: { language: langSel.value } })
+      location.reload()
+    } catch (err) {
+      langSel.value = lang
+      toast(err.message)
+    }
+  })
+}
 
 // ---------------- boot
-translatePage()
 ;(async () => {
+  await loadLang()
+  translatePage()
+  setupLangSelect()
+  document.documentElement.classList.remove('booting')
   const status = await api('/status')
   renderRadio(status.radio)
   await Promise.all([loadDevices(), loadCallbacks()])

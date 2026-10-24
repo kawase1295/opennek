@@ -49,6 +49,17 @@ pub struct Settings {
     pub sigfox_freq: u32,
     /// Transmit downlinks to real Sigfox devices. It puts a signal on air, so it is off until enabled
     pub sigfox_downlink: bool,
+    /// Language of the web UI
+    pub language: Language,
+}
+
+/// Languages of the web UI (`host/ui/i18n.js`)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Language {
+    #[default]
+    En,
+    Ja,
 }
 
 impl Default for Settings {
@@ -59,6 +70,7 @@ impl Default for Settings {
             sigfox_port: String::new(),
             sigfox_freq: 923_200_000,
             sigfox_downlink: false,
+            language: Language::En,
         }
     }
 }
@@ -72,6 +84,10 @@ impl Settings {
         let Ok(Value::Object(mut merged)) = serde_json::to_value(self) else {
             unreachable!("settings are an object")
         };
+        // serde's unknown variant error does not name the field
+        if let Some(v) = patch.get("language") {
+            Language::deserialize(v).map_err(|e| format!("language: {e}"))?;
+        }
         merged.extend(patch);
         let s: Settings = serde_json::from_value(Value::Object(merged)).map_err(|e| format!("body: {e}"))?;
         s.check()?;
