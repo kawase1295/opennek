@@ -172,3 +172,59 @@ async fn listening_on_all_addresses_shows_localhost() {
     assert!(running.url.starts_with("http://localhost:"), "{}", running.url);
     running.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_second_start_on_the_same_data_dir_says_where_the_first_runs() {
+    let data = tempfile::tempdir().unwrap();
+    let first = start_with(options(data.path()), Box::new(FakeStreamer::default()))
+        .await
+        .unwrap();
+
+    let second = FakeStreamer::default();
+    let o = Options {
+        sigfox_freq: Some(920_800_000),
+        ..options(data.path())
+    };
+    let e = start_with(o, Box::new(second.clone())).await.err().unwrap();
+    match &e {
+        StartError::AlreadyRunning { url } => assert_eq!(url.as_deref(), Some(first.url.as_str())),
+        e => panic!("{e}"),
+    }
+    assert_eq!(e.to_string(), format!("OpenNEK is already running at {}", first.url));
+
+    // it touched neither the settings nor the receiver
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(second.opened.lock().unwrap().is_empty());
+    first.shutdown().await;
+    let s = Store::open(&data.path().join("opennek.db"))
+        .unwrap()
+        .settings()
+        .unwrap();
+    assert_eq!(s.sigfox_freq, 923_200_000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_data_dir_is_free_again_after_shutdown() {
+    let data = tempfile::tempdir().unwrap();
+    for _ in 0..2 {
+        start_with(options(data.path()), Box::new(FakeStreamer::default()))
+            .await
+            .unwrap()
+            .shutdown()
+            .await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn another_data_dir_is_another_instance() {
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let first = start_with(options(a.path()), Box::new(FakeStreamer::default()))
+        .await
+        .unwrap();
+    let second = start_with(options(b.path()), Box::new(FakeStreamer::default()))
+        .await
+        .unwrap();
+    assert_ne!(first.url, second.url);
+    first.shutdown().await;
+    second.shutdown().await;
+}

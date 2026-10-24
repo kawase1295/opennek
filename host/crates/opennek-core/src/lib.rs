@@ -4,6 +4,7 @@ pub mod callbacks;
 pub mod downlink;
 pub mod engine;
 pub mod host;
+pub mod instance;
 pub mod payload;
 pub mod platform;
 pub mod radio;

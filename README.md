@@ -62,6 +62,8 @@ in the message list. The web UI is in English; a Japanese translation can be sel
 On Linux, if you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
 
 Data is stored in `~/.local/share/opennek/` (Windows: `%APPDATA%\opennek\`, macOS: `~/Library/Application Support/opennek/`).
+Only one OpenNEK runs per data dir, since it holds the database and the receiver's serial port; a second
+`opennek` prints where the first one is running and exits. Another `--data <dir>` is a separate instance.
 
 ### Uplink authentication
 
