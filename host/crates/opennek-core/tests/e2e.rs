@@ -289,3 +289,24 @@ async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
             .contains("exceeds payload")
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_ui_language_is_kept_in_the_settings() {
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    assert_eq!(get_json(&host, "/api/settings").await["language"], "en");
+    let (status, saved) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "ja" }))).await;
+    assert_eq!((status, saved["language"].clone()), (StatusCode::OK, json!("ja")));
+    let (status, err) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "fr" }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"].as_str().unwrap().contains("language"), "{err}");
+    // the settings form saves the other fields without the language
+    let (status, _) = send(
+        &host,
+        "PUT",
+        "/api/settings",
+        Some(json!({ "downlinkTimeoutMs": 6000 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(get_json(&host, "/api/settings").await["language"], "ja");
+}

@@ -1,5 +1,5 @@
-use opennek_core::store::{Auth, DownlinkStatus, MessageQuery, NewMessage, Settings, Store};
-use serde_json::json;
+use opennek_core::store::{Auth, DownlinkStatus, Language, MessageQuery, NewMessage, Settings, Store};
+use serde_json::{Value, json};
 
 fn uplink(device_id: &str, seq: u16) -> NewMessage {
     NewMessage {
@@ -84,7 +84,7 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
         serde_json::to_value(&s).unwrap(),
         json!({
             "downlinkTimeoutMs": 5000, "acceptUnknownDevices": true, "sigfoxPort": "", "sigfoxFreq": 923_200_000,
-            "sigfoxDownlink": false
+            "sigfoxDownlink": false, "language": "en"
         })
     );
     let changed = s.merged(json!({ "sigfoxPort": "/dev/ttyACM0", "unknown": 1 })).unwrap();
@@ -96,6 +96,25 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
             .contains("sigfoxFreq")
     );
     assert!(s.merged(json!({ "downlinkTimeoutMs": "x" })).is_err());
+}
+
+#[test]
+fn settings_keep_the_ui_language() {
+    let store = Store::open_in_memory().unwrap();
+    let s = store.settings().unwrap();
+    assert_eq!(s.language, Language::En);
+    let ja = s.merged(json!({ "language": "ja" })).unwrap();
+    assert_eq!(ja.language, Language::Ja);
+    store.save_settings(&ja).unwrap();
+    assert_eq!(
+        serde_json::to_value(store.settings().unwrap()).unwrap()["language"],
+        "ja"
+    );
+    assert_eq!(ja.merged(json!({ "language": "en" })).unwrap().language, Language::En);
+    for bad in [json!("fr"), json!(""), json!("JA"), json!(1), Value::Null] {
+        let e = s.merged(json!({ "language": bad })).unwrap_err();
+        assert!(e.starts_with("language: "), "{bad}: {e}");
+    }
 }
 
 // The TypeScript host's schema, with the columns of a database from before the ESP-NOW network was removed (#19)
@@ -150,6 +169,8 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
         (s.sigfox_port.as_str(), s.sigfox_downlink, s.sigfox_freq),
         ("COM4", true, 923_200_000)
     );
+    // saved before the language was a setting
+    assert_eq!(s.language, Language::En);
     drop(store);
     // and opening it again is a no-op
     assert_eq!(
