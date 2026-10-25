@@ -14,7 +14,10 @@ fn config(name: &str) -> Value {
 }
 
 fn read(path: &Value) -> String {
-    std::fs::read_to_string(dir().join(path.as_str().unwrap())).unwrap()
+    let s = std::fs::read_to_string(dir().join(path.as_str().unwrap())).unwrap();
+    // these go into the .deb as they are; .gitattributes keeps them LF on a Windows checkout too
+    assert!(!s.contains('\r'), "{path} has CRLF line endings");
+    s
 }
 
 const IDENTIFIER: &str = "io.github.kawase1295.opennek";
