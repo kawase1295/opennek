@@ -84,7 +84,7 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
         serde_json::to_value(&s).unwrap(),
         json!({
             "downlinkTimeoutMs": 5000, "acceptUnknownDevices": true, "sigfoxPort": "", "sigfoxFreq": 923_200_000,
-            "sigfoxDownlink": false, "language": "en"
+            "sigfoxDownlink": false, "language": null
         })
     );
     let changed = s.merged(json!({ "sigfoxPort": "/dev/ttyACM0", "unknown": 1 })).unwrap();
@@ -134,19 +134,32 @@ fn an_empty_port_saved_by_an_older_version_is_read_as_never_set() {
 fn settings_keep_the_ui_language() {
     let store = Store::open_in_memory().unwrap();
     let s = store.settings().unwrap();
-    assert_eq!(s.language, Language::En);
+    // not chosen yet: the UI follows the browser's language
+    assert_eq!(s.language, None);
     let ja = s.merged(json!({ "language": "ja" })).unwrap();
-    assert_eq!(ja.language, Language::Ja);
+    assert_eq!(ja.language, Some(Language::Ja));
     store.save_settings(&ja).unwrap();
     assert_eq!(
         serde_json::to_value(store.settings().unwrap()).unwrap()["language"],
         "ja"
     );
-    assert_eq!(ja.merged(json!({ "language": "en" })).unwrap().language, Language::En);
-    for bad in [json!("fr"), json!(""), json!("JA"), json!(1), Value::Null] {
+    assert_eq!(
+        ja.merged(json!({ "language": "en" })).unwrap().language,
+        Some(Language::En)
+    );
+    // null goes back to following the browser
+    assert_eq!(ja.merged(json!({ "language": null })).unwrap().language, None);
+    for bad in [json!("fr"), json!(""), json!("JA"), json!(1)] {
         let e = s.merged(json!({ "language": bad })).unwrap_err();
         assert!(e.starts_with("language: "), "{bad}: {e}");
     }
+}
+
+#[test]
+fn a_language_saved_by_an_older_version_stays_chosen() {
+    // before the language could be left unchosen, saving any setting stored "en"
+    let old: Settings = serde_json::from_value(json!({ "sigfoxPort": "COM4", "language": "en" })).unwrap();
+    assert_eq!(old.language, Some(Language::En));
 }
 
 // The TypeScript host's schema, with the columns of a database from before the ESP-NOW network was removed (#19)
@@ -202,7 +215,7 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
         (ReceiverPort::Port("COM4".into()), true, 923_200_000)
     );
     // saved before the language was a setting
-    assert_eq!(s.language, Language::En);
+    assert_eq!(s.language, None);
     drop(store);
     // and opening it again is a no-op
     assert_eq!(

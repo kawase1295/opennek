@@ -1,4 +1,5 @@
 // OpenNEK Web UI (ビルド不要の素の JS)
+import { authBadge, dlBadge } from './badges.js'
 import { chooseLang, LANGUAGES, lang, setLang, t, takeLegacyLang, translatePage } from './i18n.js'
 
 const $ = (sel, root = document) => root.querySelector(sel)
@@ -70,22 +71,6 @@ function renderRadio(r) {
 
 // ---------------- messages
 const msgBody = $('#msg-table tbody')
-const DL_BADGE = {
-  none: '',
-  pending: `<span class="badge warn">${t('dl.pending')}</span>`,
-  sent: `<span class="badge ok">${t('dl.sent')}</span>`,
-  acked: `<span class="badge ok">${t('dl.acked')}</span>`,
-  failed: `<span class="badge bad">${t('dl.failed')}</span>`,
-  nodata: `<span class="badge muted">${t('dl.nodata')}</span>`,
-  unsupported: `<span class="badge muted">${t('dl.unsupported')}</span>`,
-}
-const AUTH_BADGE = {
-  ok: '<span class="badge ok">OK</span>',
-  bad: `<span class="badge bad">${t('auth.bad')}</span>`,
-  public: `<span class="badge muted">${t('auth.public')}</span>`,
-  unverified: `<span class="badge muted">${t('auth.unverified')}</span>`,
-}
-
 function deviceLabel(id) {
   const d = state.devices.find((x) => x.id === id)
   return d?.name ? `${esc(id)} <span class="muted">${esc(d.name)}</span>` : esc(id)
@@ -99,10 +84,11 @@ function messageRow(m) {
           .join('  '),
       )}</span>`
     : ''
-  const dl = m.ack ? `${DL_BADGE[m.downlinkStatus] ?? ''} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : m.oob ? '<span class="badge muted">OOB</span>' : ''
+  // データはバッジの下の段に置き、列の幅を広げない
+  const dl = m.ack ? `${dlBadge(m.downlinkStatus)}${m.downlink ? `<span class="decoded mono">${spaced(m.downlink)}</span>` : ''}` : m.oob ? '<span class="badge muted">OOB</span>' : ''
   return `<td>${fmtTime(m.time)}</td><td>${deviceLabel(m.deviceId)}</td><td>${m.seq}</td>
     <td class="data">${spaced(m.data)}${decoded}</td><td>${m.rssi} dBm</td><td>${m.nbFrames}/3</td>
-    <td>${AUTH_BADGE[m.auth]}</td><td>${dl}</td>`
+    <td>${authBadge(m.auth)}</td><td>${dl}</td>`
 }
 
 function upsertMessage(m, live) {
@@ -160,8 +146,8 @@ msgBody.addEventListener('click', async (e) => {
     [t('kv.decoded'), m.decoded ? `<code>${esc(JSON.stringify(m.decoded))}</code>` : '—'],
     ['RSSI', `${m.rssi} dBm`],
     [t('kv.frames'), `${m.nbFrames}/3`],
-    [t('kv.auth'), AUTH_BADGE[m.auth]],
-    [t('kv.downlink'), m.ack ? `${DL_BADGE[m.downlinkStatus]} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : t('kv.noDownlink')],
+    [t('kv.auth'), authBadge(m.auth)],
+    [t('kv.downlink'), m.ack ? `${dlBadge(m.downlinkStatus)} ${m.downlink ? `<code>${spaced(m.downlink)}</code>` : ''}` : t('kv.noDownlink')],
   ]
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`)
     .join('')
@@ -316,7 +302,7 @@ async function loadCallbacks() {
         <div><strong>${esc(c.name || t('cb.untitled', { id: c.id }))}</strong>
           ${c.enabled ? `<span class="badge ok">${t('cb.enabled')}</span>` : `<span class="badge muted">${t('cb.disabled')}</span>`}
           ${c.downlink ? `<span class="badge warn">${t('cb.downlink')}</span>` : ''}</div>
-        <div class="url"><code>${esc(c.method)}</code> ${esc(c.url)}</div>
+        <div class="url" title="${esc(c.url)}"><code>${esc(c.method)}</code> ${esc(c.url)}</div>
         <div class="muted">${esc(t('cb.target', { devices: c.devices || t('cb.allDevices') }))}</div>
         <div class="actions"><button class="small" data-act="test">${t('cb.test')}</button>
           <button class="small" data-act="edit">${t('common.edit')}</button>
@@ -375,7 +361,8 @@ $('#cb-list').addEventListener('click', async (e) => {
     await api(`/callbacks/${c.id}`, { method: 'DELETE' })
     loadCallbacks()
   }
-  if (btn.dataset.act === 'test') {
+  // 本物のリクエストが飛ぶので、宛先を見せてから送る
+  if (btn.dataset.act === 'test' && confirm(t('cb.confirmTest', { method: c.method, url: c.url }))) {
     btn.disabled = true
     try {
       const { result } = await api(`/callbacks/${c.id}/test`, { method: 'POST' })
@@ -485,7 +472,7 @@ function connectEvents() {
 // 文字列を出す前に設定から言語を決める。旧版が localStorage に覚えた言語は一度だけ設定へ移す
 async function loadLang() {
   const saved = await api('/settings').then((s) => s.language, () => undefined)
-  const choice = chooseLang(saved, takeLegacyLang())
+  const choice = chooseLang(saved, takeLegacyLang(), navigator.languages ?? [])
   setLang(choice.lang)
   if (choice.migrate) await api('/settings', { method: 'PUT', body: { language: choice.lang } }).catch(() => {})
 }

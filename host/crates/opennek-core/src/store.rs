@@ -49,8 +49,8 @@ pub struct Settings {
     pub sigfox_freq: u32,
     /// Transmit downlinks to real Sigfox devices. It puts a signal on air, so it is off until enabled
     pub sigfox_downlink: bool,
-    /// Language of the web UI
-    pub language: Language,
+    /// Language of the web UI; None until one is chosen, and the UI follows the browser's language
+    pub language: Option<Language>,
 }
 
 /// The sigfoxPort setting: "" until a port is set, null for no receiver, else the port
@@ -87,10 +87,9 @@ impl From<ReceiverPort> for Option<String> {
 }
 
 /// Languages of the web UI (`host/ui/i18n.js`)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Language {
-    #[default]
     En,
     Ja,
 }
@@ -103,7 +102,7 @@ impl Default for Settings {
             sigfox_port: ReceiverPort::Unset,
             sigfox_freq: 923_200_000,
             sigfox_downlink: false,
-            language: Language::En,
+            language: None,
         }
     }
 }
@@ -119,7 +118,7 @@ impl Settings {
         };
         // serde's unknown variant error does not name the field
         if let Some(v) = patch.get("language") {
-            Language::deserialize(v).map_err(|e| format!("language: {e}"))?;
+            Option::<Language>::deserialize(v).map_err(|e| format!("language: {e}"))?;
         }
         merged.extend(patch);
         let s: Settings = serde_json::from_value(Value::Object(merged)).map_err(|e| format!("body: {e}"))?;

@@ -104,6 +104,7 @@ async fn the_ui_is_served_from_the_binary() {
     for (path, kind) in [
         ("/app.js", "text/javascript"),
         ("/i18n.js", "text/javascript"),
+        ("/badges.js", "text/javascript"),
         ("/style.css", "text/css"),
     ] {
         let (status, content_type, body) = get(&host, path).await;
@@ -306,7 +307,7 @@ async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_ui_language_is_kept_in_the_settings() {
     let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
-    assert_eq!(get_json(&host, "/api/settings").await["language"], "en");
+    assert_eq!(get_json(&host, "/api/settings").await["language"], Value::Null);
     let (status, saved) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "ja" }))).await;
     assert_eq!((status, saved["language"].clone()), (StatusCode::OK, json!("ja")));
     let (status, err) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "fr" }))).await;
