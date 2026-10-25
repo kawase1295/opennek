@@ -16,7 +16,7 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 serialport = { version = "4.10.1", default-features = false }
-sigfox = { version = "0.1.0", path = "../sigfox" }
+sigfox = { path = "../sigfox" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
 ureq = "3.5.0"
