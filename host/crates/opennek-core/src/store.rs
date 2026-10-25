@@ -1,5 +1,6 @@
 //! The SQLite database, shared with the TypeScript host: the same schema, so either opens the other's file
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -39,25 +40,74 @@ const MAX_LIMIT: u32 = 1000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Settings {
     pub downlink_timeout_ms: u32,
     /// Show and forward messages of devices that are not registered
     pub accept_unknown_devices: bool,
-    /// Port of the receiver; empty when it is not used
-    pub sigfox_port: String,
+    /// Port of the receiver
+    pub sigfox_port: ReceiverPort,
     /// RC3 uplink centre frequency, Hz
     pub sigfox_freq: u32,
     /// Transmit downlinks to real Sigfox devices. It puts a signal on air, so it is off until enabled
     pub sigfox_downlink: bool,
-    /// Language of the web UI
-    pub language: Language,
+    /// Language of the web UI; None until one is chosen, and the UI follows the browser's language
+    pub language: Option<Language>,
+    /// Light or dark web UI
+    pub theme: Theme,
+}
+
+/// The web UI's colours; kept with the host like the language, so a change of port keeps it
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum Theme {
+    /// Follow the OS
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// The sigfoxPort setting: "" until a port is set, null for no receiver, else the port
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Option<String>", into = "Option<String>")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(as = "Option<String>"))]
+pub enum ReceiverPort {
+    /// The host looks for the XIAO kit (`serial::auto_port`). Older versions saved "" for no receiver too, and
+    /// whenever another setting was saved, so their "" is read as this: it was not a choice
+    #[default]
+    Unset,
+    /// No receiver, chosen with `--sigfox off` or in the settings
+    Off,
+    Port(String),
+}
+
+impl From<Option<String>> for ReceiverPort {
+    fn from(v: Option<String>) -> Self {
+        match v {
+            None => ReceiverPort::Off,
+            Some(p) if p.is_empty() => ReceiverPort::Unset,
+            Some(p) => ReceiverPort::Port(p),
+        }
+    }
+}
+
+impl From<ReceiverPort> for Option<String> {
+    fn from(p: ReceiverPort) -> Self {
+        match p {
+            ReceiverPort::Unset => Some(String::new()),
+            ReceiverPort::Off => None,
+            ReceiverPort::Port(p) => Some(p),
+        }
+    }
 }
 
 /// Languages of the web UI (`host/ui/i18n.js`)
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Language {
-    #[default]
     En,
     Ja,
 }
@@ -67,10 +117,11 @@ impl Default for Settings {
         Self {
             downlink_timeout_ms: 5000,
             accept_unknown_devices: true,
-            sigfox_port: String::new(),
+            sigfox_port: ReceiverPort::Unset,
             sigfox_freq: 923_200_000,
             sigfox_downlink: false,
-            language: Language::En,
+            language: None,
+            theme: Theme::System,
         }
     }
 }
@@ -86,7 +137,10 @@ impl Settings {
         };
         // serde's unknown variant error does not name the field
         if let Some(v) = patch.get("language") {
-            Language::deserialize(v).map_err(|e| format!("language: {e}"))?;
+            Option::<Language>::deserialize(v).map_err(|e| format!("language: {e}"))?;
+        }
+        if let Some(v) = patch.get("theme") {
+            Theme::deserialize(v).map_err(|e| format!("theme: {e}"))?;
         }
         merged.extend(patch);
         let s: Settings = serde_json::from_value(Value::Object(merged)).map_err(|e| format!("body: {e}"))?;
@@ -107,11 +161,13 @@ impl Settings {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Device {
     pub id: String,
     pub name: String,
     /// 32 hex digits, or empty when not known
     pub key: String,
+    #[cfg_attr(test, ts(type = "\"none\" | \"static\" | \"callback\""))]
     pub downlink_mode: String,
     pub downlink_data: String,
     pub payload_config: String,
@@ -185,69 +241,315 @@ impl DeviceInput {
     }
 }
 
-/// A callback as the UI saves it, checked like the TypeScript host's CallbackInput. Stored as JSON in this order
+/// A callback with the types, channels and fields of the Sigfox Backend (a device type's "New callback"), plus the
+/// devices it is for (OpenNEK has no device types). Stored as JSON in this order
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase", from = "StoredCallback")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackInput {
+    /// OpenNEK's own: a name for the list
     pub name: String,
+    pub callback_type: CallbackType,
+    /// None only for ERROR
+    pub callback_subtype: Option<CallbackSubtype>,
+    pub channel: Channel,
     pub enabled: bool,
-    /// Comma-separated device IDs; empty for every device
-    pub devices: String,
-    /// GET, POST or PUT
-    pub method: String,
+    /// Also for a message other base stations received again; OpenNEK has one receiver, so it never sees one
+    pub send_duplicate: bool,
+    /// Custom payload config: the {customData#name} variables; empty for the device's payload format
+    pub payload_config: String,
+    /// URL and BATCH_URL: the url pattern
     pub url: String,
+    pub http_method: HttpMethod,
+    /// Send SNI (Server Name Indication) for TLS connections
+    pub send_sni: bool,
     /// Header values may use variables
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub headers: serde_json::Map<String, Value>,
     pub content_type: String,
-    pub body: String,
-    /// Take downlink data from the response
+    pub body_template: String,
+    /// BATCH_URL: one line per message
+    pub line_pattern: String,
+    /// EMAIL
+    pub recipient: String,
+    pub subject: String,
+    pub message: String,
+    /// A DATA BIDIR callback chosen for downlink: the downlink data comes from its response
     pub downlink: bool,
+    /// OpenNEK's own: comma-separated device IDs; empty for every device
+    pub devices: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum CallbackType {
+    Data,
+    Service,
+    Error,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum CallbackSubtype {
+    /// DATA: the uplink
+    Uplink,
+    /// DATA: the uplink, and the downlink from the answer when chosen for downlink
+    Bidir,
+    /// SERVICE: battery and temperature of an out-of-band message
+    Status,
+    /// SERVICE: the device received the downlink
+    Acknowledge,
+    Repeater,
+    DataAdvanced,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum Channel {
+    Url,
+    BatchUrl,
+    Email,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum HttpMethod {
+    Get,
+    Post,
+    Put,
+}
+
+impl HttpMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HttpMethod::Get => "GET",
+            HttpMethod::Post => "POST",
+            HttpMethod::Put => "PUT",
+        }
+    }
+}
+
+impl CallbackSubtype {
+    fn of(t: CallbackType) -> &'static [CallbackSubtype] {
+        use CallbackSubtype::*;
+        match t {
+            CallbackType::Data => &[Uplink, Bidir],
+            CallbackType::Service => &[Status, Acknowledge, Repeater, DataAdvanced],
+            CallbackType::Error => &[],
+        }
+    }
 }
 
 impl Default for CallbackInput {
     fn default() -> Self {
         Self {
             name: String::new(),
+            callback_type: CallbackType::Data,
+            callback_subtype: Some(CallbackSubtype::Uplink),
+            channel: Channel::Url,
             enabled: true,
-            devices: String::new(),
-            method: "POST".into(),
+            send_duplicate: false,
+            payload_config: String::new(),
             url: String::new(),
+            http_method: HttpMethod::Post,
+            // the Backend leaves it off, but most HTTPS servers need it; and callbacks of older versions sent it
+            send_sni: true,
             headers: Default::default(),
             content_type: "application/json".into(),
-            body: String::new(),
+            body_template: String::new(),
+            line_pattern: String::new(),
+            recipient: String::new(),
+            subject: String::new(),
+            message: String::new(),
             downlink: false,
+            devices: String::new(),
         }
     }
 }
 
-const METHODS: [&str; 3] = ["GET", "POST", "PUT"];
+/// A callback as stored, also by older versions: they had method and body, and no type or channel. A DATA callback
+/// without a subtype was an UPLINK, or a BIDIR when it took the downlink from its response
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct StoredCallback {
+    name: String,
+    callback_type: CallbackType,
+    callback_subtype: Option<CallbackSubtype>,
+    channel: Channel,
+    enabled: bool,
+    send_duplicate: bool,
+    payload_config: String,
+    url: String,
+    #[serde(alias = "method")]
+    http_method: HttpMethod,
+    send_sni: bool,
+    headers: serde_json::Map<String, Value>,
+    content_type: String,
+    #[serde(alias = "body")]
+    body_template: String,
+    line_pattern: String,
+    recipient: String,
+    subject: String,
+    message: String,
+    downlink: bool,
+    devices: String,
+}
+
+impl Default for StoredCallback {
+    fn default() -> Self {
+        let d = CallbackInput::default();
+        Self {
+            name: d.name,
+            callback_type: d.callback_type,
+            callback_subtype: None,
+            channel: d.channel,
+            enabled: d.enabled,
+            send_duplicate: d.send_duplicate,
+            payload_config: d.payload_config,
+            url: d.url,
+            http_method: d.http_method,
+            send_sni: d.send_sni,
+            headers: d.headers,
+            content_type: d.content_type,
+            body_template: d.body_template,
+            line_pattern: d.line_pattern,
+            recipient: d.recipient,
+            subject: d.subject,
+            message: d.message,
+            downlink: d.downlink,
+            devices: d.devices,
+        }
+    }
+}
+
+impl From<StoredCallback> for CallbackInput {
+    fn from(s: StoredCallback) -> Self {
+        let callback_subtype = match (s.callback_type, s.callback_subtype) {
+            (CallbackType::Data, None) if s.downlink => Some(CallbackSubtype::Bidir),
+            (CallbackType::Data, None) => Some(CallbackSubtype::Uplink),
+            (_, subtype) => subtype,
+        };
+        Self {
+            name: s.name,
+            callback_type: s.callback_type,
+            callback_subtype,
+            channel: s.channel,
+            enabled: s.enabled,
+            send_duplicate: s.send_duplicate,
+            payload_config: s.payload_config,
+            url: s.url,
+            http_method: s.http_method,
+            send_sni: s.send_sni,
+            headers: s.headers,
+            content_type: s.content_type,
+            body_template: s.body_template,
+            line_pattern: s.line_pattern,
+            recipient: s.recipient,
+            subject: s.subject,
+            message: s.message,
+            downlink: s.downlink,
+            devices: s.devices,
+        }
+    }
+}
+
+// serde's unknown variant error does not name the field
+fn check_field<T: for<'de> Deserialize<'de>>(
+    fields: &serde_json::Map<String, Value>,
+    name: &str,
+) -> std::result::Result<(), String> {
+    match fields.get(name) {
+        Some(v) => T::deserialize(v).map(|_| ()).map_err(|e| format!("{name}: {e}")),
+        None => Ok(()),
+    }
+}
+
+fn check_url(url: &str) -> std::result::Result<(), String> {
+    if url.is_empty() {
+        return Err("url: required".into());
+    }
+    url::Url::parse(url).map(|_| ()).map_err(|_| "url: invalid URL".into())
+}
 
 impl CallbackInput {
     pub fn parse(body: Value) -> std::result::Result<CallbackInput, String> {
         let Value::Object(fields) = &body else {
             return Err("body: expected an object".into());
         };
-        if !fields.contains_key("url") {
-            return Err("url: required".into());
-        }
+        check_field::<CallbackType>(fields, "callbackType")?;
+        check_field::<Option<CallbackSubtype>>(fields, "callbackSubtype")?;
+        check_field::<Channel>(fields, "channel")?;
+        check_field::<HttpMethod>(fields, "httpMethod")?;
+        check_field::<HttpMethod>(fields, "method")?;
         let c: CallbackInput = serde_json::from_value(body).map_err(|e| format!("body: {e}"))?;
         if c.name.chars().count() > 64 {
             return Err("name: at most 64 characters".into());
         }
-        if !METHODS.contains(&c.method.as_str()) {
-            return Err(format!("method: one of {}", METHODS.join(", ")));
+        let allowed = CallbackSubtype::of(c.callback_type);
+        match c.callback_subtype {
+            Some(s) if allowed.contains(&s) => {}
+            None if allowed.is_empty() => {}
+            _ => {
+                let names: Vec<String> = allowed
+                    .iter()
+                    .map(|s| {
+                        serde_json::to_value(s)
+                            .unwrap_or_default()
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string()
+                    })
+                    .collect();
+                let want = if names.is_empty() {
+                    "none".to_string()
+                } else {
+                    format!("one of {}", names.join(", "))
+                };
+                return Err(format!(
+                    "callbackSubtype: {} takes {want}",
+                    serde_json::to_value(c.callback_type)
+                        .unwrap_or_default()
+                        .as_str()
+                        .unwrap_or_default()
+                ));
+            }
         }
-        if url::Url::parse(&c.url).is_err() {
-            return Err("url: invalid URL".into());
+        if c.downlink && c.callback_subtype != Some(CallbackSubtype::Bidir) {
+            return Err("downlink: only a DATA BIDIR callback can be chosen for downlink".into());
+        }
+        match c.channel {
+            Channel::Url | Channel::BatchUrl => check_url(&c.url)?,
+            Channel::Email => {
+                let valid = c
+                    .recipient
+                    .split_once('@')
+                    .is_some_and(|(user, host)| !user.is_empty() && host.contains('.'));
+                if !valid {
+                    return Err("recipient: a valid email address".into());
+                }
+            }
         }
         if let Some((k, _)) = c.headers.iter().find(|(_, v)| !v.is_string()) {
             return Err(format!("headers.{k}: expected string"));
         }
+        if !c.payload_config.trim().is_empty() {
+            crate::payload::parse_payload_config(&c.payload_config).map_err(|e| format!("payloadConfig: {e}"))?;
+        }
         Ok(c)
+    }
+
+    /// What OpenNEK sends: DATA callbacks (UPLINK and BIDIR) to a URL. The others are kept as in the Backend
+    pub fn is_sent(&self) -> bool {
+        self.callback_type == CallbackType::Data && self.channel == Channel::Url
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Callback {
     #[serde(flatten)]
     pub input: CallbackInput,
@@ -257,6 +559,7 @@ pub struct Callback {
 /// How an uplink's authentication field checked out
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Auth {
     /// The registered key verifies it
     Ok,
@@ -270,6 +573,7 @@ pub enum Auth {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum DownlinkStatus {
     None,
     Pending,
@@ -308,6 +612,7 @@ impl Auth {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NewMessage {
     pub device_id: String,
     /// Wall-clock ms
@@ -323,6 +628,7 @@ pub struct NewMessage {
     pub nb_frames: u32,
     pub auth: Auth,
     pub station: String,
+    #[cfg_attr(test, ts(type = "Record<string, unknown> | null"))]
     pub decoded: Option<Value>,
     pub downlink: Option<String>,
     pub downlink_status: DownlinkStatus,
@@ -330,6 +636,7 @@ pub struct NewMessage {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Message {
     pub id: i64,
     #[serde(flatten)]
@@ -346,6 +653,7 @@ pub struct MessageQuery {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackLog {
     pub id: i64,
     #[serde(flatten)]
@@ -354,6 +662,7 @@ pub struct CallbackLog {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NewCallbackLog {
     pub callback_id: i64,
     pub message_id: i64,
@@ -669,6 +978,17 @@ impl Store {
         )?;
         db.execute("DELETE FROM callback_logs WHERE id <= ?", [log.id - MAX_LOGS])?;
         Ok(log)
+    }
+
+    /// The newest log of each callback, by callback
+    pub fn last_logs(&self) -> Result<HashMap<i64, CallbackLog>> {
+        self.db()
+            .prepare(
+                "SELECT * FROM callback_logs WHERE id IN (SELECT MAX(id) FROM callback_logs GROUP BY callback_id)",
+            )?
+            .query_map([], to_log)?
+            .map(|l| l.map(|l| (l.fields.callback_id, l)))
+            .collect()
     }
 
     pub fn list_logs(

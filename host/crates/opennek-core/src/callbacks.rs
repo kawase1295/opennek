@@ -8,12 +8,13 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::radio::now_ms;
-use crate::store::{Auth, Callback, DownlinkStatus, Message, NewMessage};
+use crate::store::{Auth, Callback, CallbackSubtype, DownlinkStatus, HttpMethod, Message, NewMessage};
 
 const MAX_RESPONSE_LOG: usize = 2000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackResult {
     pub status: Option<u16>,
     pub ok: bool,
@@ -36,6 +37,33 @@ fn js_string(v: &Value) -> String {
             .join(","),
         other => other.to_string(),
     }
+}
+
+/// The message's data, decoded with a callback's custom payload config
+fn custom_data(config: &str, data_hex: &str) -> Option<Value> {
+    let bytes: Option<Vec<u8>> = (0..data_hex.len())
+        .step_by(2)
+        .map(|i| data_hex.get(i..i + 2).and_then(|b| u8::from_str_radix(b, 16).ok()))
+        .collect();
+    let fields = crate::payload::decode_payload(config, &bytes?).ok()?;
+    Some(Value::Object(fields))
+}
+
+/// The variables of a callback: a custom payload config of its own names the {customData#...} variables, else the
+/// device's payload format does (what the message list shows)
+pub fn callback_vars(cb: &Callback, m: &Message, device_name: &str) -> HashMap<String, String> {
+    let config = cb.input.payload_config.trim();
+    if config.is_empty() {
+        return template_vars(m, device_name);
+    }
+    let own = Message {
+        fields: NewMessage {
+            decoded: custom_data(config, &m.fields.data),
+            ..m.fields.clone()
+        },
+        ..m.clone()
+    };
+    template_vars(&own, device_name)
 }
 
 pub fn template_vars(m: &Message, device_name: &str) -> HashMap<String, String> {
@@ -195,6 +223,7 @@ const BODY_HEADERS: [&str; 4] = [
 
 struct Outgoing {
     method: String,
+    sni: bool,
     url: url::Url,
     headers: Vec<(String, String)>,
     body: Option<String>,
@@ -204,6 +233,7 @@ impl Outgoing {
     fn send(&self, remaining: Duration) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
         // redirects are followed here, by the rules of fetch, which ureq does not apply to bodies
         let agent: ureq::Agent = ureq::Agent::config_builder()
+            .tls_config(ureq::tls::TlsConfig::builder().use_sni(self.sni).build())
             .timeout_global(Some(remaining))
             .http_status_as_error(false)
             .max_redirects(0)
@@ -265,7 +295,7 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
         })
     };
     let c = &cb.input;
-    let vars = template_vars(m, device_name);
+    let vars = callback_vars(cb, m, device_name);
     let url = match url::Url::parse(&render_template(&c.url, &vars, Some(encode_uri_component))) {
         Ok(url) => url,
         Err(e) => return failed(format!("invalid URL: {e}")),
@@ -275,13 +305,14 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
         .iter()
         .map(|(k, v)| (k.clone(), render_template(v.as_str().unwrap_or_default(), &vars, None)))
         .collect();
-    let has_body = c.method != "GET";
+    let has_body = c.http_method != HttpMethod::Get;
     if has_body && !headers.iter().any(|(k, _)| k == "Content-Type") {
         headers.push(("Content-Type".into(), c.content_type.clone()));
     }
-    let body = has_body.then(|| render_template(&c.body, &vars, None));
+    let body = has_body.then(|| render_template(&c.body_template, &vars, None));
     let mut out = Outgoing {
-        method: c.method.clone(),
+        method: c.http_method.as_str().into(),
+        sni: c.send_sni,
         url,
         headers,
         body,
@@ -320,7 +351,7 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
             error: (!ok).then(|| format!("HTTP {status}")),
             duration_ms: elapsed(),
             response: Some(truncate_utf16(text, MAX_RESPONSE_LOG).to_string()),
-            downlink: (c.downlink && ok && status != 204)
+            downlink: (c.downlink && c.callback_subtype == Some(CallbackSubtype::Bidir) && ok && status != 204)
                 .then(|| extract_downlink(text, &m.fields.device_id))
                 .flatten(),
         };

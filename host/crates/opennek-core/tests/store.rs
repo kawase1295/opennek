@@ -1,4 +1,6 @@
-use opennek_core::store::{Auth, DownlinkStatus, Language, MessageQuery, NewMessage, Settings, Store};
+use opennek_core::store::{
+    Auth, DownlinkStatus, Language, MessageQuery, NewMessage, ReceiverPort, Settings, Store, Theme,
+};
 use serde_json::{Value, json};
 
 fn uplink(device_id: &str, seq: u16) -> NewMessage {
@@ -84,12 +86,15 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
         serde_json::to_value(&s).unwrap(),
         json!({
             "downlinkTimeoutMs": 5000, "acceptUnknownDevices": true, "sigfoxPort": "", "sigfoxFreq": 923_200_000,
-            "sigfoxDownlink": false, "language": "en"
+            "sigfoxDownlink": false, "language": null, "theme": "system"
         })
     );
     let changed = s.merged(json!({ "sigfoxPort": "/dev/ttyACM0", "unknown": 1 })).unwrap();
     store.save_settings(&changed).unwrap();
-    assert_eq!(store.settings().unwrap().sigfox_port, "/dev/ttyACM0");
+    assert_eq!(
+        store.settings().unwrap().sigfox_port,
+        ReceiverPort::Port("/dev/ttyACM0".into())
+    );
     assert!(
         s.merged(json!({ "sigfoxFreq": 100 }))
             .unwrap_err()
@@ -99,22 +104,85 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
 }
 
 #[test]
+fn the_receiver_port_is_never_set_none_or_a_port() {
+    let s = Settings::default();
+    assert_eq!(s.sigfox_port, ReceiverPort::Unset);
+    for (json, port) in [
+        (json!(""), ReceiverPort::Unset),
+        (Value::Null, ReceiverPort::Off),
+        (json!("COM4"), ReceiverPort::Port("COM4".into())),
+    ] {
+        let merged = s.merged(json!({ "sigfoxPort": json })).unwrap();
+        assert_eq!(merged.sigfox_port, port);
+        assert_eq!(serde_json::to_value(&merged).unwrap()["sigfoxPort"], json);
+    }
+    assert!(s.merged(json!({ "sigfoxPort": 1 })).is_err());
+}
+
+#[test]
+fn an_empty_port_saved_by_an_older_version_is_read_as_never_set() {
+    // Older versions saved "" for "none" and whenever another setting was saved, so it is no choice
+    let store = Store::open_in_memory().unwrap();
+    store
+        .save_settings(&Settings::default().merged(json!({ "language": "ja" })).unwrap())
+        .unwrap();
+    assert_eq!(store.settings().unwrap().sigfox_port, ReceiverPort::Unset);
+    let off = store.settings().unwrap().merged(json!({ "sigfoxPort": null })).unwrap();
+    store.save_settings(&off).unwrap();
+    assert_eq!(store.settings().unwrap().sigfox_port, ReceiverPort::Off);
+}
+
+#[test]
+fn settings_keep_the_ui_theme() {
+    let store = Store::open_in_memory().unwrap();
+    // the OS's light or dark until one is chosen, also for settings saved before the theme was one
+    assert_eq!(store.settings().unwrap().theme, Theme::System);
+    let old: Settings = serde_json::from_value(json!({ "language": "ja" })).unwrap();
+    assert_eq!(old.theme, Theme::System);
+    let dark = store.settings().unwrap().merged(json!({ "theme": "dark" })).unwrap();
+    assert_eq!(dark.theme, Theme::Dark);
+    store.save_settings(&dark).unwrap();
+    assert_eq!(
+        serde_json::to_value(store.settings().unwrap()).unwrap()["theme"],
+        "dark"
+    );
+    assert_eq!(dark.merged(json!({ "theme": "light" })).unwrap().theme, Theme::Light);
+    for bad in [json!("blue"), json!(""), Value::Null, json!(1)] {
+        let e = dark.merged(json!({ "theme": bad })).unwrap_err();
+        assert!(e.starts_with("theme: "), "{bad}: {e}");
+    }
+}
+
+#[test]
 fn settings_keep_the_ui_language() {
     let store = Store::open_in_memory().unwrap();
     let s = store.settings().unwrap();
-    assert_eq!(s.language, Language::En);
+    // not chosen yet: the UI follows the browser's language
+    assert_eq!(s.language, None);
     let ja = s.merged(json!({ "language": "ja" })).unwrap();
-    assert_eq!(ja.language, Language::Ja);
+    assert_eq!(ja.language, Some(Language::Ja));
     store.save_settings(&ja).unwrap();
     assert_eq!(
         serde_json::to_value(store.settings().unwrap()).unwrap()["language"],
         "ja"
     );
-    assert_eq!(ja.merged(json!({ "language": "en" })).unwrap().language, Language::En);
-    for bad in [json!("fr"), json!(""), json!("JA"), json!(1), Value::Null] {
+    assert_eq!(
+        ja.merged(json!({ "language": "en" })).unwrap().language,
+        Some(Language::En)
+    );
+    // null goes back to following the browser
+    assert_eq!(ja.merged(json!({ "language": null })).unwrap().language, None);
+    for bad in [json!("fr"), json!(""), json!("JA"), json!(1)] {
         let e = s.merged(json!({ "language": bad })).unwrap_err();
         assert!(e.starts_with("language: "), "{bad}: {e}");
     }
+}
+
+#[test]
+fn a_language_saved_by_an_older_version_stays_chosen() {
+    // before the language could be left unchosen, saving any setting stored "en"
+    let old: Settings = serde_json::from_value(json!({ "sigfoxPort": "COM4", "language": "en" })).unwrap();
+    assert_eq!(old.language, Some(Language::En));
 }
 
 // The TypeScript host's schema, with the columns of a database from before the ESP-NOW network was removed (#19)
@@ -166,11 +234,11 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
     assert_eq!(store.list_callbacks().unwrap()[0].id, 1);
     let s = store.settings().unwrap();
     assert_eq!(
-        (s.sigfox_port.as_str(), s.sigfox_downlink, s.sigfox_freq),
-        ("COM4", true, 923_200_000)
+        (s.sigfox_port, s.sigfox_downlink, s.sigfox_freq),
+        (ReceiverPort::Port("COM4".into()), true, 923_200_000)
     );
     // saved before the language was a setting
-    assert_eq!(s.language, Language::En);
+    assert_eq!(s.language, None);
     drop(store);
     // and opening it again is a no-op
     assert_eq!(

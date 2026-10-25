@@ -7,7 +7,7 @@ use axum::http::{Request, StatusCode};
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
 use http_body_util::BodyExt;
 use opennek_core::host::Host;
-use opennek_core::store::Store;
+use opennek_core::store::{ReceiverPort, Store};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -35,7 +35,7 @@ async fn get_json(host: &Arc<Host>, path: &str) -> Value {
 fn host_with_capture(file: &str) -> Arc<Host> {
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let raw = std::fs::read(fixture(file)).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
@@ -100,12 +100,10 @@ async fn the_ui_is_served_from_the_binary() {
     let (status, content_type, body) = get(&host, "/").await;
     assert_eq!(status, StatusCode::OK);
     assert!(content_type.starts_with("text/html"));
-    assert!(body.contains(r#"<script type="module" src="/app.js">"#));
-    for (path, kind) in [
-        ("/app.js", "text/javascript"),
-        ("/i18n.js", "text/javascript"),
-        ("/style.css", "text/css"),
-    ] {
+    // the build of host/ui (dist/)
+    assert!(body.contains(r#"src="/app.js""#), "{body}");
+    assert!(body.contains(r#"href="/app.css""#), "{body}");
+    for (path, kind) in [("/app.js", "text/javascript"), ("/app.css", "text/css")] {
         let (status, content_type, body) = get(&host, path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         assert!(content_type.starts_with(kind), "{path}: {content_type}");
@@ -232,7 +230,7 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
     send(
@@ -282,7 +280,7 @@ async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
     let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
     send(
@@ -306,7 +304,7 @@ async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_ui_language_is_kept_in_the_settings() {
     let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
-    assert_eq!(get_json(&host, "/api/settings").await["language"], "en");
+    assert_eq!(get_json(&host, "/api/settings").await["language"], Value::Null);
     let (status, saved) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "ja" }))).await;
     assert_eq!((status, saved["language"].clone()), (StatusCode::OK, json!("ja")));
     let (status, err) = send(&host, "PUT", "/api/settings", Some(json!({ "language": "fr" }))).await;

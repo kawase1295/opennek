@@ -52,13 +52,14 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    `--host` (access from the LAN): `opennek-<version>-linux-x64`, `opennek-<version>-windows-x64.exe`,
    `opennek-<version>-macos-arm64` (Apple silicon) or `opennek-<version>-macos-x64` (Intel Mac), a single file with
    nothing else to install. `SHA256SUMS` lists the checksums of all downloads.
-4. Start the executable with the kit's serial port (the app needs no step here: pick the port in the web UI):
+4. Start the executable (the app needs no step here). It finds the XIAO kit by itself; `--sigfox` gives the serial port
+   of another receiver, or picks one of several kits:
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
    .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows (PowerShell)
    ```
-   The web UI opens in your browser (`--no-open` to skip that). Without `--sigfox`, pick the port in the web UI.
+   The web UI opens in your browser (`--no-open` to skip that). `--sigfox off` starts it without a receiver.
    `--help` lists all options. On Windows, double-clicking the `.exe` starts it too.
 
    On Linux and macOS, start it from a terminal opened in the download folder (on Linux, right-click the folder →
@@ -73,8 +74,10 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    `.exe`: choose **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
    `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.
 
-Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
-**Settings → Sigfox receiver (RC3)**. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
+Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). OpenNEK finds the XIAO kit by itself
+(the **Log** tab says `sigfox: found the XIAO kit on <port>`) and remembers its port. Pick the port under
+**Settings → Sigfox receiver (RC3)** only for another receiver or when several kits are plugged in; **Don't use** there
+is remembered too. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
 On Linux, if you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
@@ -130,20 +133,29 @@ The firmware refuses anything outside these limits, whatever the host asks:
 
 ## Callbacks
 
-Configure the URL, headers and body in the **Callbacks** tab. The body supports the same
-variables as Sigfox custom callbacks (`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}`
-`{station}` `{customData#name}`, … — full list in [docs/protocol.md](docs/protocol.md)).
+Callbacks have the types, channels and fields of a device type's callbacks in the Sigfox Backend: **Type**
+(DATA UPLINK / BIDIR, SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED, ERROR), **Channel** (URL, BATCH_URL,
+EMAIL), Send duplicate, Custom payload config, Url pattern, Use HTTP Method, Send SNI, Headers, Content type and Body.
+OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA callbacks to
+a URL; the other types and channels are kept as in the Backend but not sent yet, which the **Callbacks** tab shows.
+The url pattern, headers and body support the same variables as Sigfox custom callbacks (`{device}` `{time}`
+`{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#name}`, … — full list in
+[docs/protocol.md](docs/protocol.md)).
 
 ```json
 {"device":"{device}","time":{time},"data":"{data}","seqNumber":{seqNumber},"rssi":{rssi}}
 ```
 
-- **Payload format** (per device): with something like `temp::int:16:little-endian hum::uint:8 door:0:bool:7`,
-  decoded values are shown in the UI and are available in callbacks as `{customData#temp}`.
+- **Custom payload config** (per callback, as in the Backend): with something like
+  `temp::int:16:little-endian hum::uint:8 door:0:bool:7`, the values are available as `{customData#temp}`. A callback
+  without one uses the device's **payload format**, which is also what the UI shows decoded.
 - **Downlink data**: set the device's downlink mode to "Static data" (e.g. `{time}0102{rssi}`) or to
-  "Callback response". For the latter, enable "Take the downlink data from the response" on the callback;
-  if the response is `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
-- The **Send test** button fires the callback with the latest message (not recorded in the logs).
+  "Callback response". For the latter, make a DATA BIDIR callback and choose it in the Downlink column of the list
+  (a new BIDIR callback is not chosen, as in the Backend); if the response is
+  `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
+- **Send SNI** is on for new callbacks (the Backend leaves it off), since most HTTPS servers need it.
+- The **Send test** button fires the callback with the latest message (not recorded in the history). Each callback's
+  last answer is in the list, and its history behind it.
 
 ## Using it on WSL2
 
@@ -160,14 +172,20 @@ The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 
 ## Development
 
-Run the host from source (needs [rustup](https://rustup.rs/); `rust-toolchain.toml` picks the Rust version):
+Run the host from source (needs [rustup](https://rustup.rs/), where `rust-toolchain.toml` picks the Rust version,
+and Node 22 or later). The web UI in `host/ui` ([Svelte](https://svelte.dev/), TypeScript, Vite) is built first:
+the executable embeds its build (`host/ui/dist`), and a Rust build without it stops with a hint.
 
 ```bash
+(cd host/ui && npm ci && npm run build)
 cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-The web UI in `host/ui` is plain JS without a build step and is embedded in the executable.
+While working on the UI, run `npm run dev` in `host/ui` next to a running host: it serves the UI with hot reload
+on <http://localhost:5173/> and passes `/api` to the host on port 8085. The UI's types for the API
+(`host/ui/src/lib/api.gen.ts`) are generated from the host's Rust types; after changing those, regenerate them with
+`UPDATE_API_TYPES=1 cargo test -p opennek-core api_types` (a test fails while they differ).
 
 The desktop app (`host/crates/opennek-desktop`, [Tauri](https://tauri.app/)) shows the same web UI in its own window.
 Plain `cargo` commands leave it out, so the `opennek` executable stays a static binary; build it by name:
@@ -188,7 +206,7 @@ installer locally, run `npx @tauri-apps/cli@2.12.4 build --bundles deb` (or `nsi
 `host/crates/opennek-desktop`.
 
 ```bash
-scripts/check     # what CI runs: format, lint and test the host and the desktop app, test the UI strings, the LSM100A tools and the firmware natively
+scripts/check     # what CI runs: type check, test and build the UI, format, lint and test the host and the desktop app, test the LSM100A tools and the firmware natively
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

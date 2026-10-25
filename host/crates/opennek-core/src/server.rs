@@ -11,22 +11,22 @@ use axum::response::sse::{self, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::callbacks::{applies_to, dummy_message, run_callback};
+use crate::callbacks::{CallbackResult, applies_to, dummy_message, run_callback};
 use crate::engine::Event;
 use crate::host::Host;
-use crate::radio::now_ms;
+use crate::radio::{RadioStatus, now_ms};
 use crate::serial::list_serial_ports;
-use crate::store::{CallbackInput, DeviceInput, MessageQuery};
+use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings};
 
-// The UI is plain JS without a build step; it is embedded so the binary needs no file next to it
-const INDEX_HTML: &str = include_str!("../../../ui/index.html");
-const APP_JS: &str = include_str!("../../../ui/app.js");
-const I18N_JS: &str = include_str!("../../../ui/i18n.js");
-const STYLE_CSS: &str = include_str!("../../../ui/style.css");
+// The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
+const INDEX_HTML: &str = include_str!("../../../ui/dist/index.html");
+const APP_JS: &str = include_str!("../../../ui/dist/app.js");
+const APP_CSS: &str = include_str!("../../../ui/dist/app.css");
 
 const JS: &str = "text/javascript; charset=utf-8";
 /// A comment this often keeps proxies from closing the event stream
@@ -74,23 +74,33 @@ pub fn router(host: Arc<Host>) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, JS)], APP_JS) }))
-        .route("/i18n.js", get(|| async { ([(header::CONTENT_TYPE, JS)], I18N_JS) }))
         .route(
-            "/style.css",
-            get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLE_CSS) }),
+            "/app.css",
+            get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS) }),
         )
         .nest("/api", api)
         .with_state(host)
 }
 
+/// GET /api/status
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub version: String,
+    pub radio: RadioStatus,
+    pub settings: Settings,
+    /// Where the host writes its log, once it does
+    pub log_file: Option<String>,
+}
+
 async fn status(State(host): Shared) -> ApiResult {
-    let settings = host.engine.store().settings()?;
-    to_json(json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "radio": host.radio.status(),
-        "settings": settings,
-        "logFile": host.log_file.get(),
-    }))
+    to_json(Status {
+        version: env!("CARGO_PKG_VERSION").into(),
+        radio: host.radio.status(),
+        settings: host.engine.store().settings()?,
+        log_file: host.log_file.get().map(|p| p.display().to_string()),
+    })
 }
 
 async fn settings(State(host): Shared) -> ApiResult {
@@ -207,8 +217,28 @@ async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>)
     to_json(host.engine.store().list_messages(&query)?)
 }
 
+/// GET /api/callbacks: each callback with its newest answer
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct CallbackSummary {
+    #[serde(flatten)]
+    pub callback: Callback,
+    pub last_log: Option<CallbackLog>,
+}
+
 async fn callbacks(State(host): Shared) -> ApiResult {
-    to_json(host.engine.store().list_callbacks()?)
+    let store = host.engine.store();
+    let mut last = store.last_logs()?;
+    let list: Vec<CallbackSummary> = store
+        .list_callbacks()?
+        .into_iter()
+        .map(|callback| CallbackSummary {
+            last_log: last.remove(&callback.id),
+            callback,
+        })
+        .collect();
+    to_json(list)
 }
 
 fn callback_input(body: Value) -> Result<CallbackInput, ApiError> {
@@ -237,11 +267,26 @@ async fn delete_callback(State(host): Shared, Path(id): Path<String>) -> Result<
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/callbacks/{id}/test
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TestResult {
+    /// The message it was tried with
+    pub message: Message,
+    pub result: CallbackResult,
+}
+
 // Tries a callback with the latest message it applies to (or a made-up one); not logged
 async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult {
     let id = id.parse().map_err(|_| not_found())?;
     let store = host.engine.store();
     let cb = store.get_callback(id)?.ok_or_else(not_found)?;
+    if !cb.input.is_sent() {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "this callback is not sent by OpenNEK: only DATA callbacks to a URL are".into(),
+        ));
+    }
     let recent = store.list_messages(&MessageQuery {
         limit: Some(50),
         ..Default::default()
@@ -261,7 +306,7 @@ async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult
     })
     .await
     .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    to_json(json!({ "message": message, "result": result }))
+    to_json(TestResult { message, result })
 }
 
 async fn callback_logs(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> ApiResult {

@@ -7,7 +7,7 @@ use std::time::Duration;
 use common::{FakeStreamer, eventually};
 use opennek_core::engine::Event;
 use opennek_core::radio::RadioState;
-use opennek_core::store::Store;
+use opennek_core::store::{ReceiverPort, Store};
 use opennek_core::{Options, StartError, start_with};
 use serde_json::Value;
 
@@ -140,7 +140,7 @@ async fn the_sigfox_options_are_saved_in_the_settings() {
         .unwrap()
         .settings()
         .unwrap();
-    assert_eq!((s.sigfox_port.as_str(), s.sigfox_freq), ("", 920_800_000));
+    assert_eq!((s.sigfox_port, s.sigfox_freq), (ReceiverPort::Off, 920_800_000));
 
     // without them the saved settings stay
     let o = Options {
@@ -156,7 +156,7 @@ async fn the_sigfox_options_are_saved_in_the_settings() {
         .unwrap()
         .settings()
         .unwrap();
-    assert_eq!((s.sigfox_port.as_str(), s.sigfox_freq), ("", 920_800_000));
+    assert_eq!((s.sigfox_port, s.sigfox_freq), (ReceiverPort::Off, 920_800_000));
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use common::{FakeStreamer, cfo_streamer_lines, eventually};
 use opennek_core::radio::{DownlinkTx, Radio, RadioEvent, RadioSettings, RadioState, Transmitter, now_ms};
+use opennek_core::store::ReceiverPort;
 use sigfox::frame::DeviceId;
 
 const FRAME: [u8; 15] = [
@@ -67,7 +68,7 @@ fn setup(
     let sink = events.clone();
     let radio = Arc::new(Radio::new(
         Box::new(move || RadioSettings {
-            port: "fake0".into(),
+            port: ReceiverPort::Port("fake0".into()),
             freq: 923_200_000,
             follow,
         }),
@@ -167,7 +168,7 @@ fn an_older_streamer_is_not_asked_to_transmit() {
 fn without_a_receiver_nothing_is_sent() {
     let radio = Radio::new(
         Box::new(|| RadioSettings {
-            port: String::new(),
+            port: ReceiverPort::Off,
             freq: 923_200_000,
             follow: false,
         }),

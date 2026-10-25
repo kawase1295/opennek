@@ -100,6 +100,12 @@ jobs:
         with:
           workspaces: host
           key: ${{ matrix.target }}
+      # The host embeds the web UI's build (host/ui/dist)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - working-directory: host/ui
+        run: npm ci && npm run build
       - working-directory: host
         run: cargo build --release --locked --package opennek-cli --target ${{ matrix.target }}
       - run: |
@@ -162,6 +168,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The host embeds the web UI's build (host/ui/dist)
+      - working-directory: host/ui
+        run: npm ci && npm run build
       # The Tauri CLI's prebuilt binary from npm, pinned like the crates
       - working-directory: host/crates/opennek-desktop
         run: npx --yes @tauri-apps/cli@2.12.4 build --ci --bundles ${{ matrix.bundle }}

@@ -51,13 +51,13 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    `opennek-<version>-linux-x64`、`opennek-<version>-windows-x64.exe`、`opennek-<version>-macos-arm64`（Apple シリコン）、
    `opennek-<version>-macos-x64`（Intel Mac）があり、1 ファイルだけでほかに入れるものはありません。
    すべてのダウンロードのチェックサムは `SHA256SUMS` にあります。
-4. 実行ファイルは、キットのシリアルポートを指定して起動します（アプリはこの手順は不要で、Web UI でポートを選びます）。
+4. 実行ファイルを起動します（アプリはこの手順は不要です）。XIAO キットは自動で見つかります。他の受信機や、複数のキットから選ぶときは `--sigfox` でシリアルポートを指定します。
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
    .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows（PowerShell）
    ```
-   起動するとブラウザで Web UI が開きます（開かないようにするには `--no-open`）。`--sigfox` を省くと、Web UI でポートを選べます。
+   起動するとブラウザで Web UI が開きます（開かないようにするには `--no-open`）。`--sigfox off` で受信機なしで起動します。
    オプションの一覧は `--help` で表示されます。Windows では `.exe` をダブルクリックしても起動します。
 
    Linux と macOS では、ダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
@@ -70,7 +70,7 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
    一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
 
-<http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
+<http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。OpenNEK は XIAO キットを自動で見つけ（**ログ** タブに `sigfox: found the XIAO kit on <ポート>` と出ます）、そのポートを保存します。**設定 → Sigfox 受信機 (RC3)** でポートを選ぶのは、他の受信機を使うときと、複数のキットを接続しているときだけです。そこで **使わない** を選ぶと、それも保存されます。
 Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
 UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（設定に保存されます）。
 
@@ -125,20 +125,28 @@ ATS410=0    → 秘密鍵に戻す。本番ネットワークで使う前に必�
 
 ## コールバック
 
-**コールバック** タブで URL・ヘッダ・ボディを設定します。ボディには Sigfox カスタムコールバックと同じ変数を使えます
-（`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#名前}` など。
-一覧は [docs/protocol.ja.md](docs/protocol.ja.md)）。
+コールバックの種類・チャンネル・項目は、Sigfox Backend のデバイスタイプのコールバックと同じです。**Type**
+（DATA UPLINK / BIDIR、SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED、ERROR）、**Channel**（URL、BATCH_URL、
+EMAIL）、Send duplicate、Custom payload config、Url pattern、Use HTTP Method、Send SNI、Headers、Content type、Body。
+OpenNEK にはデバイスタイプがないので、代わりにコールバックごとに対象デバイスを指定します（空欄ならすべて）。
+OpenNEK が送るのは DATA を URL へのコールバックです。ほかの種類・チャンネルは Backend と同じ形で保存しますが、まだ
+送られません（**コールバック** タブにそう表示されます）。Url pattern・ヘッダー・本文には Sigfox カスタムコールバックと
+同じ変数を使えます（`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#名前}`
+など。一覧は [docs/protocol.ja.md](docs/protocol.ja.md)）。
 
 ```json
 {"device":"{device}","time":{time},"data":"{data}","seqNumber":{seqNumber},"rssi":{rssi}}
 ```
 
-- **ペイロード定義**（デバイスごと）: `temp::int:16:little-endian hum::uint:8 door:0:bool:7` のように書くと、
-  UI にデコードした値が出て、コールバックでは `{customData#temp}` として使えます。
+- **Custom payload config**（Backend と同じくコールバックごと）: `temp::int:16:little-endian hum::uint:8 door:0:bool:7`
+  のように書くと、`{customData#temp}` として使えます。指定しないコールバックは、デバイスの **ペイロード定義** を使います
+  （UI にデコードして表示するのもこちらです）。
 - **ダウンリンクのデータ**: デバイスの設定を「固定データ」（例: `{time}0102{rssi}`）か「コールバックのレスポンス」にします。
-  後者ではコールバックの「レスポンスからダウンリンクデータを取り出す」にチェックを入れます。レスポンスで
-  `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
-- **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（ログには残りません）。
+  後者では DATA BIDIR のコールバックを作り、一覧のダウンリンク列で選びます（Backend と同じく、作っただけでは選ばれません）。
+  レスポンスで `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
+- **Send SNI** は新しいコールバックでは最初からオンです（Backend はオフ）。ほとんどの HTTPS サーバーで必要なためです。
+- **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（履歴には残りません）。
+  一覧に各コールバックの直近の結果が出て、そこから履歴を開けます。
 
 ## WSL2 で使う場合
 
@@ -155,14 +163,20 @@ Web UI は Windows のブラウザから <http://localhost:8085/> で開けま�
 
 ## 開発
 
-ソースからホストを動かす場合（[rustup](https://rustup.rs/) が必要です。Rust のバージョンは `rust-toolchain.toml` で決まります）:
+ソースからホストを動かす場合は、[rustup](https://rustup.rs/)（Rust のバージョンは `rust-toolchain.toml` で決まります）と
+Node 22 以降が必要です。`host/ui` の Web UI（[Svelte](https://svelte.dev/)、TypeScript、Vite）を先にビルドします。
+実行ファイルはそのビルド結果（`host/ui/dist`）を埋め込むので、ビルドしていないと Rust のビルドが手順を示して止まります。
 
 ```bash
+(cd host/ui && npm ci && npm run build)
 cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-`host/ui` の Web UI はビルド不要の素の JS で、実行ファイルに埋め込まれます。
+UI を開発するときは、ホストを動かしたまま `host/ui` で `npm run dev` を実行します。<http://localhost:5173/> で
+UI を自動再読み込み付きで配信し、`/api` はポート 8085 のホストへ渡します。UI が使う API の型
+（`host/ui/src/lib/api.gen.ts`）はホストの Rust の型から生成しています。Rust の型を変えたら
+`UPDATE_API_TYPES=1 cargo test -p opennek-core api_types` で生成し直してください（ずれている間はテストが失敗します）。
 
 デスクトップアプリ（`host/crates/opennek-desktop`、[Tauri](https://tauri.app/)）は同じ Web UI を専用のウィンドウで表示します。
 `opennek` 実行ファイルを静的バイナリのまま保つため、素の `cargo` コマンドの対象からは外してあります。名前を指定してビルドします:
@@ -182,7 +196,7 @@ main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョ�
 インストーラを手元で作るには、`host/crates/opennek-desktop` で `npx @tauri-apps/cli@2.12.4 build --bundles deb`（Windows では `nsis`）を実行します。
 
 ```bash
-scripts/check     # CI と同じ検査: ホストとデスクトップアプリのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
+scripts/check     # CI と同じ検査: UI の型検査・テスト・ビルド、ホストとデスクトップアプリのフォーマット・lint・テスト、LSM100A ツール、ファームのネイティブテスト
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
