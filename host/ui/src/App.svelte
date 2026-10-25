@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { app } from './lib/app.svelte'
   import { toast } from './lib/toast.svelte'
+  import ConfirmDialog from './components/ConfirmDialog.svelte'
   import Header from './components/Header.svelte'
   import Callbacks from './tabs/Callbacks.svelte'
   import Devices from './tabs/Devices.svelte'
@@ -20,4 +21,5 @@
   {:else if app.tab === 'log'}<HostLog />
   {:else}<Settings />{/if}
 </main>
-<div id="toast" class:show={toast.shown}>{toast.text}</div>
+<div id="toast" class:show={toast.shown} role="status">{toast.text}</div>
+<ConfirmDialog />

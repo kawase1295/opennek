@@ -2,6 +2,7 @@
 import type {
   Callback,
   CallbackInput,
+  CallbackSummary,
   CallbackLog,
   ConsoleLine,
   Device,
@@ -55,14 +56,15 @@ export const api = {
   clearMessages: (device: string) => request<void>('DELETE', `/messages${query({ device })}`),
   messagesCsvUrl: (device: string) => `/api/messages.csv${query({ device })}`,
 
-  callbacks: () => request<Callback[]>('GET', '/callbacks'),
+  callbacks: () => request<CallbackSummary[]>('GET', '/callbacks'),
   saveCallback: (id: number | null, input: CallbackInput) =>
     id === null
       ? request<Callback>('POST', '/callbacks', input)
       : request<Callback>('PUT', `/callbacks/${id}`, input),
   deleteCallback: (id: number) => request<void>('DELETE', `/callbacks/${id}`),
   testCallback: (id: number) => request<TestResult>('POST', `/callbacks/${id}/test`),
-  callbackLogs: (q: { message?: number; limit?: number }) => request<CallbackLog[]>('GET', `/callback-logs${query(q)}`),
+  callbackLogs: (q: { callback?: number; message?: number; limit?: number }) =>
+    request<CallbackLog[]>('GET', `/callback-logs${query(q)}`),
 
   hostLog: () => request<ConsoleLine[]>('GET', '/logs'),
 }

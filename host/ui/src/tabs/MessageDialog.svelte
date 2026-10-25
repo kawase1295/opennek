@@ -46,7 +46,7 @@
       <h4>{t('detail.callbacks')}</h4>
       <div>
         {#each logs as l (l.id)}
-          <div>
+          <div class="log-entry">
             <strong>{app.callbackName(l.callbackId)}</strong>
             <Badge badge={logBadge(l)} />
             <span class="muted">{l.durationMs} ms</span>

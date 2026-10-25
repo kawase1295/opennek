@@ -1,4 +1,6 @@
-use opennek_core::store::{Auth, DownlinkStatus, Language, MessageQuery, NewMessage, ReceiverPort, Settings, Store};
+use opennek_core::store::{
+    Auth, DownlinkStatus, Language, MessageQuery, NewMessage, ReceiverPort, Settings, Store, Theme,
+};
 use serde_json::{Value, json};
 
 fn uplink(device_id: &str, seq: u16) -> NewMessage {
@@ -84,7 +86,7 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
         serde_json::to_value(&s).unwrap(),
         json!({
             "downlinkTimeoutMs": 5000, "acceptUnknownDevices": true, "sigfoxPort": "", "sigfoxFreq": 923_200_000,
-            "sigfoxDownlink": false, "language": null
+            "sigfoxDownlink": false, "language": null, "theme": "system"
         })
     );
     let changed = s.merged(json!({ "sigfoxPort": "/dev/ttyACM0", "unknown": 1 })).unwrap();
@@ -128,6 +130,27 @@ fn an_empty_port_saved_by_an_older_version_is_read_as_never_set() {
     let off = store.settings().unwrap().merged(json!({ "sigfoxPort": null })).unwrap();
     store.save_settings(&off).unwrap();
     assert_eq!(store.settings().unwrap().sigfox_port, ReceiverPort::Off);
+}
+
+#[test]
+fn settings_keep_the_ui_theme() {
+    let store = Store::open_in_memory().unwrap();
+    // the OS's light or dark until one is chosen, also for settings saved before the theme was one
+    assert_eq!(store.settings().unwrap().theme, Theme::System);
+    let old: Settings = serde_json::from_value(json!({ "language": "ja" })).unwrap();
+    assert_eq!(old.theme, Theme::System);
+    let dark = store.settings().unwrap().merged(json!({ "theme": "dark" })).unwrap();
+    assert_eq!(dark.theme, Theme::Dark);
+    store.save_settings(&dark).unwrap();
+    assert_eq!(
+        serde_json::to_value(store.settings().unwrap()).unwrap()["theme"],
+        "dark"
+    );
+    assert_eq!(dark.merged(json!({ "theme": "light" })).unwrap().theme, Theme::Light);
+    for bad in [json!("blue"), json!(""), Value::Null, json!(1)] {
+        let e = dark.merged(json!({ "theme": bad })).unwrap_err();
+        assert!(e.starts_with("theme: "), "{bad}: {e}");
+    }
 }
 
 #[test]

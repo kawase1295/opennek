@@ -125,20 +125,28 @@ ATS410=0    → 秘密鍵に戻す。本番ネットワークで使う前に必�
 
 ## コールバック
 
-**コールバック** タブで URL・ヘッダ・ボディを設定します。ボディには Sigfox カスタムコールバックと同じ変数を使えます
-（`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#名前}` など。
-一覧は [docs/protocol.ja.md](docs/protocol.ja.md)）。
+コールバックの種類・チャンネル・項目は、Sigfox Backend のデバイスタイプのコールバックと同じです。**Type**
+（DATA UPLINK / BIDIR、SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED、ERROR）、**Channel**（URL、BATCH_URL、
+EMAIL）、Send duplicate、Custom payload config、Url pattern、Use HTTP Method、Send SNI、Headers、Content type、Body。
+OpenNEK にはデバイスタイプがないので、代わりにコールバックごとに対象デバイスを指定します（空欄ならすべて）。
+OpenNEK が送るのは DATA を URL へのコールバックです。ほかの種類・チャンネルは Backend と同じ形で保存しますが、まだ
+送られません（**コールバック** タブにそう表示されます）。Url pattern・ヘッダー・本文には Sigfox カスタムコールバックと
+同じ変数を使えます（`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#名前}`
+など。一覧は [docs/protocol.ja.md](docs/protocol.ja.md)）。
 
 ```json
 {"device":"{device}","time":{time},"data":"{data}","seqNumber":{seqNumber},"rssi":{rssi}}
 ```
 
-- **ペイロード定義**（デバイスごと）: `temp::int:16:little-endian hum::uint:8 door:0:bool:7` のように書くと、
-  UI にデコードした値が出て、コールバックでは `{customData#temp}` として使えます。
+- **Custom payload config**（Backend と同じくコールバックごと）: `temp::int:16:little-endian hum::uint:8 door:0:bool:7`
+  のように書くと、`{customData#temp}` として使えます。指定しないコールバックは、デバイスの **ペイロード定義** を使います
+  （UI にデコードして表示するのもこちらです）。
 - **ダウンリンクのデータ**: デバイスの設定を「固定データ」（例: `{time}0102{rssi}`）か「コールバックのレスポンス」にします。
-  後者ではコールバックの「レスポンスからダウンリンクデータを取り出す」にチェックを入れます。レスポンスで
-  `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
-- **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（ログには残りません）。
+  後者では DATA BIDIR のコールバックを作り、一覧のダウンリンク列で選びます（Backend と同じく、作っただけでは選ばれません）。
+  レスポンスで `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
+- **Send SNI** は新しいコールバックでは最初からオンです（Backend はオフ）。ほとんどの HTTPS サーバーで必要なためです。
+- **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（履歴には残りません）。
+  一覧に各コールバックの直近の結果が出て、そこから履歴を開けます。
 
 ## WSL2 で使う場合
 

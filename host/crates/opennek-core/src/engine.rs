@@ -254,7 +254,7 @@ impl Engine {
             self.store
                 .list_callbacks()?
                 .into_iter()
-                .filter(|c| c.input.enabled && applies_to(c, &message.fields.device_id))
+                .filter(|c| c.input.enabled && c.input.is_sent() && applies_to(c, &message.fields.device_id))
                 .collect()
         } else {
             vec![]

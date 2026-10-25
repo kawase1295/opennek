@@ -21,11 +21,17 @@ sigfoxDownlink: boolean,
 /**
  * Language of the web UI; None until one is chosen, and the UI follows the browser's language
  */
-language: Language | null, };
+language: Language | null, 
+/**
+ * Light or dark web UI
+ */
+theme: Theme, };
 
 export type ReceiverPort = string | null;
 
 export type Language = "en" | "ja";
+
+export type Theme = "system" | "light" | "dark";
 
 export type Device = { id: string, name: string, 
 /**
@@ -33,41 +39,151 @@ export type Device = { id: string, name: string,
  */
 key: string, downlinkMode: "none" | "static" | "callback", downlinkData: string, payloadConfig: string, createdAt: number, lastSeen: number | null, lastSeq: number | null, };
 
-export type CallbackInput = { name: string, enabled: boolean, 
+export type CallbackInput = { 
 /**
- * Comma-separated device IDs; empty for every device
+ * OpenNEK's own: a name for the list
  */
-devices: string, 
+name: string, callbackType: CallbackType, 
 /**
- * GET, POST or PUT
+ * None only for ERROR
  */
-method: "GET" | "POST" | "PUT", url: string, 
+callbackSubtype: CallbackSubtype | null, channel: Channel, enabled: boolean, 
+/**
+ * Also for a message other base stations received again; OpenNEK has one receiver, so it never sees one
+ */
+sendDuplicate: boolean, 
+/**
+ * Custom payload config: the {customData#name} variables; empty for the device's payload format
+ */
+payloadConfig: string, 
+/**
+ * URL and BATCH_URL: the url pattern
+ */
+url: string, httpMethod: HttpMethod, 
+/**
+ * Send SNI (Server Name Indication) for TLS connections
+ */
+sendSni: boolean, 
 /**
  * Header values may use variables
  */
-headers: Record<string, unknown>, contentType: string, body: string, 
+headers: Record<string, unknown>, contentType: string, bodyTemplate: string, 
 /**
- * Take downlink data from the response
+ * BATCH_URL: one line per message
  */
-downlink: boolean, };
+linePattern: string, 
+/**
+ * EMAIL
+ */
+recipient: string, subject: string, message: string, 
+/**
+ * A DATA BIDIR callback chosen for downlink: the downlink data comes from its response
+ */
+downlink: boolean, 
+/**
+ * OpenNEK's own: comma-separated device IDs; empty for every device
+ */
+devices: string, };
 
-export type Callback = { id: number, name: string, enabled: boolean, 
+export type CallbackType = "DATA" | "SERVICE" | "ERROR";
+
+export type CallbackSubtype = "UPLINK" | "BIDIR" | "STATUS" | "ACKNOWLEDGE" | "REPEATER" | "DATA_ADVANCED";
+
+export type Channel = "URL" | "BATCH_URL" | "EMAIL";
+
+export type HttpMethod = "GET" | "POST" | "PUT";
+
+export type Callback = { id: number, 
 /**
- * Comma-separated device IDs; empty for every device
+ * OpenNEK's own: a name for the list
  */
-devices: string, 
+name: string, callbackType: CallbackType, 
 /**
- * GET, POST or PUT
+ * None only for ERROR
  */
-method: "GET" | "POST" | "PUT", url: string, 
+callbackSubtype: CallbackSubtype | null, channel: Channel, enabled: boolean, 
+/**
+ * Also for a message other base stations received again; OpenNEK has one receiver, so it never sees one
+ */
+sendDuplicate: boolean, 
+/**
+ * Custom payload config: the {customData#name} variables; empty for the device's payload format
+ */
+payloadConfig: string, 
+/**
+ * URL and BATCH_URL: the url pattern
+ */
+url: string, httpMethod: HttpMethod, 
+/**
+ * Send SNI (Server Name Indication) for TLS connections
+ */
+sendSni: boolean, 
 /**
  * Header values may use variables
  */
-headers: Record<string, unknown>, contentType: string, body: string, 
+headers: Record<string, unknown>, contentType: string, bodyTemplate: string, 
 /**
- * Take downlink data from the response
+ * BATCH_URL: one line per message
  */
-downlink: boolean, };
+linePattern: string, 
+/**
+ * EMAIL
+ */
+recipient: string, subject: string, message: string, 
+/**
+ * A DATA BIDIR callback chosen for downlink: the downlink data comes from its response
+ */
+downlink: boolean, 
+/**
+ * OpenNEK's own: comma-separated device IDs; empty for every device
+ */
+devices: string, };
+
+export type CallbackSummary = { lastLog: CallbackLog | null, id: number, 
+/**
+ * OpenNEK's own: a name for the list
+ */
+name: string, callbackType: CallbackType, 
+/**
+ * None only for ERROR
+ */
+callbackSubtype: CallbackSubtype | null, channel: Channel, enabled: boolean, 
+/**
+ * Also for a message other base stations received again; OpenNEK has one receiver, so it never sees one
+ */
+sendDuplicate: boolean, 
+/**
+ * Custom payload config: the {customData#name} variables; empty for the device's payload format
+ */
+payloadConfig: string, 
+/**
+ * URL and BATCH_URL: the url pattern
+ */
+url: string, httpMethod: HttpMethod, 
+/**
+ * Send SNI (Server Name Indication) for TLS connections
+ */
+sendSni: boolean, 
+/**
+ * Header values may use variables
+ */
+headers: Record<string, unknown>, contentType: string, bodyTemplate: string, 
+/**
+ * BATCH_URL: one line per message
+ */
+linePattern: string, 
+/**
+ * EMAIL
+ */
+recipient: string, subject: string, message: string, 
+/**
+ * A DATA BIDIR callback chosen for downlink: the downlink data comes from its response
+ */
+downlink: boolean, 
+/**
+ * OpenNEK's own: comma-separated device IDs; empty for every device
+ */
+devices: string, };
 
 export type Auth = "ok" | "bad" | "public" | "unverified";
 

@@ -12,7 +12,7 @@ use http_body_util::BodyExt;
 use opennek_core::engine::Engine;
 use opennek_core::host::Host;
 use opennek_core::radio::{RadioEvent, RadioMessage};
-use opennek_core::store::{CallbackInput, ReceiverPort, Store};
+use opennek_core::store::{CallbackInput, CallbackSubtype, CallbackType, Channel, DeviceInput, ReceiverPort, Store};
 use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
 use sigfox::frame::{DeviceId, UplinkFields};
@@ -66,7 +66,7 @@ async fn eventually_async<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T 
 }
 
 fn callback(url: &str, body: &str) -> CallbackInput {
-    CallbackInput::parse(json!({ "name": "test", "url": url, "body": body })).unwrap()
+    CallbackInput::parse(json!({ "name": "test", "url": url, "bodyTemplate": body })).unwrap()
 }
 
 async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
@@ -253,10 +253,28 @@ async fn callbacks_are_edited_and_tried_from_the_api() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{created}");
+    // an older client's callback that took the downlink from its response is a BIDIR chosen for downlink
     assert_eq!(
-        created,
-        json!({ "name": "", "enabled": true, "devices": "", "method": "POST", "url": format!("{url}/dl?d={{device}}"),
-            "headers": { "X-Key": "{device}" }, "contentType": "application/json", "body": "", "downlink": true, "id": 1 })
+        (
+            created["callbackType"].clone(),
+            created["callbackSubtype"].clone(),
+            created["downlink"].clone()
+        ),
+        (json!("DATA"), json!("BIDIR"), json!(true))
+    );
+    assert_eq!(
+        (
+            created["url"].clone(),
+            created["httpMethod"].clone(),
+            created["headers"].clone(),
+            created["id"].clone()
+        ),
+        (
+            json!(format!("{url}/dl?d={{device}}")),
+            json!("POST"),
+            json!({ "X-Key": "{device}" }),
+            json!(1)
+        )
     );
     let (status, err) = api(&host, "POST", "/api/callbacks", Some(json!({ "url": "not a url" }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -310,8 +328,11 @@ async fn a_callback_response_can_carry_downlink_data() {
     .await;
     let store = Store::open_in_memory().unwrap();
     let mut cb = callback(&format!("{url}/"), "{}");
+    cb.callback_subtype = Some(CallbackSubtype::Bidir);
     cb.downlink = true;
-    let cb = store.create_callback(&cb).unwrap();
+    let chosen = store.create_callback(&cb).unwrap();
+    cb.downlink = false;
+    let not_chosen = store.create_callback(&cb).unwrap();
     let message = opennek_core::callbacks::dummy_message(true);
     let message = opennek_core::store::Message {
         fields: opennek_core::store::NewMessage {
@@ -320,10 +341,17 @@ async fn a_callback_response_can_carry_downlink_data() {
         },
         ..message
     };
-    let result = tokio::task::spawn_blocking(move || opennek_core::callbacks::run_callback(&cb, &message, "", 2000))
-        .await
-        .unwrap();
-    assert_eq!(result.downlink.as_deref(), Some("0102030405060708"));
+    let (chosen, not_chosen) = tokio::task::spawn_blocking(move || {
+        (
+            opennek_core::callbacks::run_callback(&chosen, &message, "", 2000),
+            opennek_core::callbacks::run_callback(&not_chosen, &message, "", 2000),
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(chosen.downlink.as_deref(), Some("0102030405060708"));
+    // a BIDIR that is not chosen for downlink is sent like an UPLINK
+    assert_eq!((not_chosen.ok, not_chosen.downlink), (true, None));
 }
 
 /// A user's server with awkward answers, by path; requests are recorded as "METHOD path body authorization"
@@ -373,7 +401,7 @@ async fn awkward_server() -> (String, Arc<Mutex<Vec<String>>>) {
 }
 
 fn try_callback(url: &str, extra: Value) -> opennek_core::callbacks::CallbackResult {
-    let mut body = json!({ "url": url, "body": "b" });
+    let mut body = json!({ "url": url, "bodyTemplate": "b" });
     body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
     let cb = opennek_core::store::Callback {
         input: CallbackInput::parse(body).unwrap(),
@@ -451,4 +479,121 @@ async fn a_callback_id_that_is_not_a_number_is_not_found() {
         api(&host, "DELETE", "/api/callbacks/abc", None).await.0,
         StatusCode::NO_CONTENT
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn only_data_callbacks_to_a_url_are_sent() {
+    let (url, hits) = user_server(204, "", Duration::ZERO).await;
+    let store = Store::open_in_memory().unwrap();
+    let uplink_cb = store.create_callback(&callback(&format!("{url}/up"), "{}")).unwrap();
+    let mut status = callback(&format!("{url}/status"), "{}");
+    status.callback_type = CallbackType::Service;
+    status.callback_subtype = Some(CallbackSubtype::Status);
+    store.create_callback(&status).unwrap();
+    let mut mail = callback(&format!("{url}/mail"), "{}");
+    mail.channel = Channel::Email;
+    mail.recipient = "ops@example.com".into();
+    store.create_callback(&mail).unwrap();
+    let engine = Arc::new(Engine::new(store));
+    engine.handle_radio(uplink(&PUBLIC_KEY, 1, false));
+    let logs = eventually_async("a log", || {
+        let logs = engine.store().list_logs(None, None, None).unwrap();
+        (!logs.is_empty()).then_some(logs)
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].fields.callback_id, uplink_cb.id);
+    let paths: Vec<String> = hits.lock().unwrap().iter().map(|h| h.uri.clone()).collect();
+    assert_eq!(paths, ["/up"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_callbacks_custom_payload_config_names_its_custom_data() {
+    let (url, hits) = user_server(204, "", Duration::ZERO).await;
+    let store = Store::open_in_memory().unwrap();
+    // the device's payload format: what the message list shows, and the custom data of callbacks without their own
+    let device = DeviceInput::parse("0A1B2C3D", json!({ "payloadConfig": "a::uint:8" })).unwrap();
+    store.upsert_device(&device, 0).unwrap();
+    let mut own = callback(&format!("{url}/own"), "x={customData#x} a={customData#a}");
+    own.payload_config = "x::uint:16".into();
+    store.create_callback(&own).unwrap();
+    store
+        .create_callback(&callback(&format!("{url}/device"), "a={customData#a}"))
+        .unwrap();
+    let engine = Arc::new(Engine::new(store));
+    // payload 01 02 03
+    engine.handle_radio(uplink(&PUBLIC_KEY, 1, false));
+    eventually_async("both callbacks", || (hits.lock().unwrap().len() == 2).then_some(())).await;
+    let mut bodies: Vec<(String, String)> = hits
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|h| (h.uri.clone(), h.body.clone()))
+        .collect();
+    bodies.sort();
+    assert_eq!(
+        bodies,
+        [
+            ("/device".to_string(), "a=1".to_string()),
+            ("/own".to_string(), "x=258 a={customData#a}".to_string()),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn callbacks_opennek_does_not_send_cannot_be_tried() {
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    let (status, created) = api(
+        &host,
+        "POST",
+        "/api/callbacks",
+        Some(json!({ "callbackType": "ERROR", "callbackSubtype": null, "url": "http://127.0.0.1:9/" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let (status, err) = api(&host, "POST", "/api/callbacks/1/test", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(err["error"].as_str().unwrap().contains("not sent"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_list_shows_each_callbacks_last_answer() {
+    let (url, _) = user_server(201, "ok", Duration::ZERO).await;
+    let store = Store::open_in_memory().unwrap();
+    store.create_callback(&callback(&format!("{url}/"), "{}")).unwrap();
+    store.create_callback(&callback("http://127.0.0.1:9/", "{}")).unwrap();
+    let mut s = store.settings().unwrap();
+    s.downlink_timeout_ms = 1000;
+    store.save_settings(&s).unwrap();
+    let host = Host::new(store, Box::new(FakeStreamer::default()));
+    // one message after the other: the callbacks of two messages answer in any order
+    host.engine.handle_radio(uplink(&PUBLIC_KEY, 1, false));
+    eventually_async("two logs", || {
+        (host.engine.store().list_logs(None, None, None).unwrap().len() == 2).then_some(())
+    })
+    .await;
+    host.engine.handle_radio(uplink(&PUBLIC_KEY, 2, false));
+    eventually_async("four logs", || {
+        (host.engine.store().list_logs(None, None, None).unwrap().len() == 4).then_some(())
+    })
+    .await;
+    let (_, list) = api(&host, "GET", "/api/callbacks", None).await;
+    let list = list.as_array().unwrap();
+    assert_eq!(list.len(), 2);
+    // the newest answer of each: message 2
+    assert_eq!(
+        (
+            list[0]["id"].clone(),
+            list[0]["lastLog"]["status"].clone(),
+            list[0]["lastLog"]["messageId"].clone()
+        ),
+        (json!(1), json!(201), json!(2))
+    );
+    assert_eq!(list[1]["lastLog"]["ok"], false);
+    // a callback that never ran has none
+    let (_, created) = api(&host, "POST", "/api/callbacks", Some(json!({ "url": "http://x/" }))).await;
+    let (_, list) = api(&host, "GET", "/api/callbacks", None).await;
+    assert_eq!(list[2]["id"], created["id"]);
+    assert_eq!(list[2]["lastLog"], Value::Null);
 }

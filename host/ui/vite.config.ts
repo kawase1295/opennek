@@ -9,6 +9,8 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: '',
     modulePreload: false,
+    // the fonts go into app.css, since the host embeds only these three files
+    assetsInlineLimit: (file: string) => (file.endsWith('.woff2') ? true : undefined),
     rolldownOptions: {
       output: {
         entryFileNames: 'app.js',
