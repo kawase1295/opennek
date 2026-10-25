@@ -28,3 +28,4 @@ http-body-util = "0.1.5"
 tempfile = "3.27.0"
 tokio-stream = "0.1.19"
 tower = { version = "0.5.3", features = ["util"] }
+ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }

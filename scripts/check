@@ -3,6 +3,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 
+# The web UI first: the host embeds its build (host/ui/dist)
+cd "$root/host/ui"
+npm ci
+npm run check
+npm test
+npm run build
+
 # The host; rust-toolchain.toml makes rustup install the pinned toolchain
 cd "$root/host"
 cargo fmt --check
@@ -11,8 +18,6 @@ cargo test --locked
 # The desktop app is left out of default-members (it links webkit2gtk / WebView2), so it is checked on its own
 cargo clippy --package opennek-desktop --all-targets --locked -- -D warnings
 cargo test --package opennek-desktop --locked
-# The web UI is plain JS embedded in the host
-node --test ui/*.test.mjs
 
 # The LSM100A tools (Node)
 cd "$root/tools/lsm"

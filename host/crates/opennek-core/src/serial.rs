@@ -37,6 +37,7 @@ pub struct ListedPort {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PortInfo {
     pub path: String,
     pub label: String,

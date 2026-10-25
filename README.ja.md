@@ -155,14 +155,20 @@ Web UI は Windows のブラウザから <http://localhost:8085/> で開けま�
 
 ## 開発
 
-ソースからホストを動かす場合（[rustup](https://rustup.rs/) が必要です。Rust のバージョンは `rust-toolchain.toml` で決まります）:
+ソースからホストを動かす場合は、[rustup](https://rustup.rs/)（Rust のバージョンは `rust-toolchain.toml` で決まります）と
+Node 22 以降が必要です。`host/ui` の Web UI（[Svelte](https://svelte.dev/)、TypeScript、Vite）を先にビルドします。
+実行ファイルはそのビルド結果（`host/ui/dist`）を埋め込むので、ビルドしていないと Rust のビルドが手順を示して止まります。
 
 ```bash
+(cd host/ui && npm ci && npm run build)
 cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-`host/ui` の Web UI はビルド不要の素の JS で、実行ファイルに埋め込まれます。
+UI を開発するときは、ホストを動かしたまま `host/ui` で `npm run dev` を実行します。<http://localhost:5173/> で
+UI を自動再読み込み付きで配信し、`/api` はポート 8085 のホストへ渡します。UI が使う API の型
+（`host/ui/src/lib/api.gen.ts`）はホストの Rust の型から生成しています。Rust の型を変えたら
+`UPDATE_API_TYPES=1 cargo test -p opennek-core api_types` で生成し直してください（ずれている間はテストが失敗します）。
 
 デスクトップアプリ（`host/crates/opennek-desktop`、[Tauri](https://tauri.app/)）は同じ Web UI を専用のウィンドウで表示します。
 `opennek` 実行ファイルを静的バイナリのまま保つため、素の `cargo` コマンドの対象からは外してあります。名前を指定してビルドします:
@@ -182,7 +188,7 @@ main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョ�
 インストーラを手元で作るには、`host/crates/opennek-desktop` で `npx @tauri-apps/cli@2.12.4 build --bundles deb`（Windows では `nsis`）を実行します。
 
 ```bash
-scripts/check     # CI と同じ検査: ホストとデスクトップアプリのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
+scripts/check     # CI と同じ検査: UI の型検査・テスト・ビルド、ホストとデスクトップアプリのフォーマット・lint・テスト、LSM100A ツール、ファームのネイティブテスト
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

@@ -38,8 +38,6 @@ body {
   color: var(--text);
   font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', sans-serif;
 }
-/* app.js が設定から言語を読んで訳すまで英語の原文を見せない */
-.booting body { visibility: hidden; }
 code, .mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 12.5px; }
 code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
 
@@ -66,12 +64,9 @@ nav button.active { background: var(--code); color: var(--text); font-weight: 60
 .lang { font-size: 12.5px; padding: 2px 6px; }
 
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
-.tab { display: none; }
-.tab.active { display: block; }
 h3 { margin: 20px 0 8px; font-size: 15px; }
 .card h3 { margin-top: 0; }
 h4 { margin: 16px 0 6px; font-size: 13.5px; }
-.hidden { display: none !important; }
 .muted { color: var(--muted); }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; margin: 0; }
 .error { color: var(--bad); margin: 0; min-height: 1em; }
@@ -133,7 +128,7 @@ label.check { flex-direction: row !important; align-items: center; gap: 8px; col
 .actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 #settings-form { max-width: 560px; }
 #settings-form .actions { justify-content: flex-start; }
-.vars code { cursor: pointer; }
+.vars .var { border: none; background: none; padding: 0; }
 
 dialog { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); width: min(560px, calc(100vw - 32px)); padding: 18px; }
 dialog::backdrop { background: rgb(0 0 0 / 0.4); }
