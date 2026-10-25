@@ -163,14 +163,20 @@ The web UI can be opened from a Windows browser at <http://localhost:8085/>.
 
 ## Development
 
-Run the host from source (needs [rustup](https://rustup.rs/); `rust-toolchain.toml` picks the Rust version):
+Run the host from source (needs [rustup](https://rustup.rs/), where `rust-toolchain.toml` picks the Rust version,
+and Node 22 or later). The web UI in `host/ui` ([Svelte](https://svelte.dev/), TypeScript, Vite) is built first:
+the executable embeds its build (`host/ui/dist`), and a Rust build without it stops with a hint.
 
 ```bash
+(cd host/ui && npm ci && npm run build)
 cd host
 cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
-The web UI in `host/ui` is plain JS without a build step and is embedded in the executable.
+While working on the UI, run `npm run dev` in `host/ui` next to a running host: it serves the UI with hot reload
+on <http://localhost:5173/> and passes `/api` to the host on port 8085. The UI's types for the API
+(`host/ui/src/lib/api.gen.ts`) are generated from the host's Rust types; after changing those, regenerate them with
+`UPDATE_API_TYPES=1 cargo test -p opennek-core api_types` (a test fails while they differ).
 
 The desktop app (`host/crates/opennek-desktop`, [Tauri](https://tauri.app/)) shows the same web UI in its own window.
 Plain `cargo` commands leave it out, so the `opennek` executable stays a static binary; build it by name:
@@ -191,7 +197,7 @@ installer locally, run `npx @tauri-apps/cli@2.12.4 build --bundles deb` (or `nsi
 `host/crates/opennek-desktop`.
 
 ```bash
-scripts/check     # what CI runs: format, lint and test the host and the desktop app, test the UI strings, the LSM100A tools and the firmware natively
+scripts/check     # what CI runs: type check, test and build the UI, format, lint and test the host and the desktop app, test the LSM100A tools and the firmware natively
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

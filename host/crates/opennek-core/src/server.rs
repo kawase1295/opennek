@@ -23,12 +23,10 @@ use crate::radio::{RadioStatus, now_ms};
 use crate::serial::list_serial_ports;
 use crate::store::{CallbackInput, DeviceInput, Message, MessageQuery, Settings};
 
-// The UI is plain JS without a build step; it is embedded so the binary needs no file next to it
-const INDEX_HTML: &str = include_str!("../../../ui/index.html");
-const APP_JS: &str = include_str!("../../../ui/app.js");
-const I18N_JS: &str = include_str!("../../../ui/i18n.js");
-const BADGES_JS: &str = include_str!("../../../ui/badges.js");
-const STYLE_CSS: &str = include_str!("../../../ui/style.css");
+// The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
+const INDEX_HTML: &str = include_str!("../../../ui/dist/index.html");
+const APP_JS: &str = include_str!("../../../ui/dist/app.js");
+const APP_CSS: &str = include_str!("../../../ui/dist/app.css");
 
 const JS: &str = "text/javascript; charset=utf-8";
 /// A comment this often keeps proxies from closing the event stream
@@ -76,14 +74,9 @@ pub fn router(host: Arc<Host>) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, JS)], APP_JS) }))
-        .route("/i18n.js", get(|| async { ([(header::CONTENT_TYPE, JS)], I18N_JS) }))
         .route(
-            "/badges.js",
-            get(|| async { ([(header::CONTENT_TYPE, JS)], BADGES_JS) }),
-        )
-        .route(
-            "/style.css",
-            get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLE_CSS) }),
+            "/app.css",
+            get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], APP_CSS) }),
         )
         .nest("/api", api)
         .with_state(host)

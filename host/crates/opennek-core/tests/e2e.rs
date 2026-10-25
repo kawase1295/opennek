@@ -100,13 +100,10 @@ async fn the_ui_is_served_from_the_binary() {
     let (status, content_type, body) = get(&host, "/").await;
     assert_eq!(status, StatusCode::OK);
     assert!(content_type.starts_with("text/html"));
-    assert!(body.contains(r#"<script type="module" src="/app.js">"#));
-    for (path, kind) in [
-        ("/app.js", "text/javascript"),
-        ("/i18n.js", "text/javascript"),
-        ("/badges.js", "text/javascript"),
-        ("/style.css", "text/css"),
-    ] {
+    // the build of host/ui (dist/)
+    assert!(body.contains(r#"src="/app.js""#), "{body}");
+    assert!(body.contains(r#"href="/app.css""#), "{body}");
+    for (path, kind) in [("/app.js", "text/javascript"), ("/app.css", "text/css")] {
         let (status, content_type, body) = get(&host, path).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         assert!(content_type.starts_with(kind), "{path}: {content_type}");
