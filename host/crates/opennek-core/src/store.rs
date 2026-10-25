@@ -39,6 +39,7 @@ const MAX_LIMIT: u32 = 1000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Settings {
     pub downlink_timeout_ms: u32,
     /// Show and forward messages of devices that are not registered
@@ -56,6 +57,7 @@ pub struct Settings {
 /// The sigfoxPort setting: "" until a port is set, null for no receiver, else the port
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "Option<String>", into = "Option<String>")]
+#[cfg_attr(test, derive(ts_rs::TS), ts(as = "Option<String>"))]
 pub enum ReceiverPort {
     /// The host looks for the XIAO kit (`serial::auto_port`). Older versions saved "" for no receiver too, and
     /// whenever another setting was saved, so their "" is read as this: it was not a choice
@@ -89,6 +91,7 @@ impl From<ReceiverPort> for Option<String> {
 /// Languages of the web UI (`host/ui/i18n.js`)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Language {
     En,
     Ja,
@@ -139,11 +142,13 @@ impl Settings {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Device {
     pub id: String,
     pub name: String,
     /// 32 hex digits, or empty when not known
     pub key: String,
+    #[cfg_attr(test, ts(type = "\"none\" | \"static\" | \"callback\""))]
     pub downlink_mode: String,
     pub downlink_data: String,
     pub payload_config: String,
@@ -220,15 +225,18 @@ impl DeviceInput {
 /// A callback as the UI saves it, checked like the TypeScript host's CallbackInput. Stored as JSON in this order
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackInput {
     pub name: String,
     pub enabled: bool,
     /// Comma-separated device IDs; empty for every device
     pub devices: String,
     /// GET, POST or PUT
+    #[cfg_attr(test, ts(type = "\"GET\" | \"POST\" | \"PUT\""))]
     pub method: String,
     pub url: String,
     /// Header values may use variables
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub headers: serde_json::Map<String, Value>,
     pub content_type: String,
     pub body: String,
@@ -280,6 +288,7 @@ impl CallbackInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Callback {
     #[serde(flatten)]
     pub input: CallbackInput,
@@ -289,6 +298,7 @@ pub struct Callback {
 /// How an uplink's authentication field checked out
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Auth {
     /// The registered key verifies it
     Ok,
@@ -302,6 +312,7 @@ pub enum Auth {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum DownlinkStatus {
     None,
     Pending,
@@ -340,6 +351,7 @@ impl Auth {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NewMessage {
     pub device_id: String,
     /// Wall-clock ms
@@ -355,6 +367,7 @@ pub struct NewMessage {
     pub nb_frames: u32,
     pub auth: Auth,
     pub station: String,
+    #[cfg_attr(test, ts(type = "Record<string, unknown> | null"))]
     pub decoded: Option<Value>,
     pub downlink: Option<String>,
     pub downlink_status: DownlinkStatus,
@@ -362,6 +375,7 @@ pub struct NewMessage {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Message {
     pub id: i64,
     #[serde(flatten)]
@@ -378,6 +392,7 @@ pub struct MessageQuery {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackLog {
     pub id: i64,
     #[serde(flatten)]
@@ -386,6 +401,7 @@ pub struct CallbackLog {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NewCallbackLog {
     pub callback_id: i64,
     pub message_id: i64,

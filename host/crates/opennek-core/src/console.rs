@@ -11,6 +11,7 @@ use crate::radio::RadioStatus;
 pub const CONSOLE_LINES: usize = 1000;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConsoleLine {
     pub line: String,
     /// Wall-clock ms

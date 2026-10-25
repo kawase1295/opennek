@@ -14,6 +14,7 @@ const MAX_RESPONSE_LOG: usize = 2000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallbackResult {
     pub status: Option<u16>,
     pub ok: bool,

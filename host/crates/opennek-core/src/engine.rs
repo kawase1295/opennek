@@ -29,6 +29,7 @@ const EVENT_BUFFER: usize = 256;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub enum Event {
     Message { message: Message },
     Radio { status: RadioStatus },
