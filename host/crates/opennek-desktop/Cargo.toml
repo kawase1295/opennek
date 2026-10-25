@@ -17,3 +17,6 @@ opennek-core = { path = "../opennek-core" }
 rfd = { version = "0.17.2", default-features = false, features = ["gtk3"] }
 tauri = { version = "2.12.5", features = [] }
 url = "2.5.8"
+
+[dev-dependencies]
+serde_json = "1.0.154"

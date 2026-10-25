@@ -1,0 +1,9 @@
+[Desktop Entry]
+Categories={{categories}}
+Comment=Local network for real Sigfox devices
+Exec={{exec}}
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name=OpenNEK
+Terminal=false
+Type=Application

@@ -30,7 +30,8 @@ fn the_menu_entry_runs_the_installed_copy_in_a_terminal() {
     let p = InstallPaths::new(Path::new("/home/a user"), None);
     let entry = desktop_entry(&p);
     assert!(entry.starts_with("[Desktop Entry]\n"));
-    assert!(entry.contains("\nName=OpenNEK\n"));
+    // "(Terminal)" tells it apart from the desktop app's entry, which is named OpenNEK
+    assert!(entry.contains("\nName=OpenNEK (Terminal)\n"), "{entry}");
     assert!(
         entry.contains("\nExec=\"/home/a user/.local/bin/opennek\"\n"),
         "{entry}"

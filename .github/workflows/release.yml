@@ -1,12 +1,17 @@
 name: release
-# A version tag (v0.2.0) pushed on main builds the host (host/) for each OS and attaches the
-# executables to a GitHub Release. Pull requests that change this file run the builds only, so
-# the cross builds are proven before a tag needs them.
+# A version tag (v0.2.0) pushed on main builds the host (host/) for each OS and the desktop app's
+# installers (Linux .deb, Windows NSIS) and attaches them to a GitHub Release. Pull requests that
+# change this file or the installers' settings run the builds only, so they are proven before a
+# tag needs them.
 on:
   push:
     tags: ['v*']
   pull_request:
-    paths: ['.github/workflows/release.yml']
+    paths:
+      - '.github/workflows/release.yml'
+      - 'host/crates/opennek-desktop/tauri*.json'
+      - 'host/crates/opennek-desktop/linux/**'
+      - 'host/crates/opennek-desktop/icons/**'
 permissions:
   contents: read
 jobs:
@@ -116,10 +121,76 @@ jobs:
           path: dist/${{ env.NAME }}
           if-no-files-found: error
 
+  # The desktop app (host/crates/opennek-desktop) as installers. Unsigned for now; signing is left to
+  # configuration (Tauri's certificate / signCommand from secrets) and nothing here assumes otherwise.
+  desktop:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Pinned rather than ubuntu-latest: the app links glibc and webkit2gtk dynamically and runs
+          # only where they are at least as new as here. The .deb's dependencies say Ubuntu 24.04+
+          - os: ubuntu-24.04
+            bundle: deb
+            from: deb/*.deb
+            asset: linux-x64.deb
+          - os: windows-latest
+            bundle: nsis
+            from: nsis/*-setup.exe
+            asset: windows-x64-setup.exe
+    runs-on: ${{ matrix.os }}
+    env:
+      NAME: opennek-desktop-${{ needs.verify.outputs.version }}-${{ matrix.asset }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: host
+        run: rustup toolchain install
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: host
+          key: desktop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The Tauri CLI's prebuilt binary from npm, pinned like the crates
+      - working-directory: host/crates/opennek-desktop
+        run: npx --yes @tauri-apps/cli@2.12.4 build --ci --bundles ${{ matrix.bundle }}
+      - run: |
+          mkdir dist
+          cp host/target/release/bundle/${{ matrix.from }} "dist/$NAME"
+          ls -l dist
+      - name: The .deb installs the app, its menu entry and the udev rule, and removes the rule again
+        if: runner.os == 'Linux'
+        run: |
+          dpkg-deb --info "dist/$NAME"
+          sudo apt-get install -y "./dist/$NAME"
+          test -x /usr/bin/opennek-desktop
+          grep -x 'Name=OpenNEK' /usr/share/applications/io.github.kawase1295.opennek.desktop
+          grep -F 'TAG+="uaccess"' /usr/lib/udev/rules.d/70-opennek.rules
+          sudo apt-get remove -y io-github-kawase1295-opennek
+          test ! -e /usr/lib/udev/rules.d/70-opennek.rules
+      - name: The installer installs for the current user only
+        if: runner.os == 'Windows'
+        run: |
+          "dist/$NAME" //S
+          ls "$LOCALAPPDATA/OpenNEK"
+          test -f "$LOCALAPPDATA/OpenNEK/opennek-desktop.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: dist/${{ env.NAME }}
+          if-no-files-found: error
+
   release:
-    needs: [verify, build]
+    needs: [verify, build, desktop]
     # build counts as successful when only the best-effort macOS jobs failed
-    if: github.event_name == 'push' && always() && needs.verify.result == 'success' && needs.build.result == 'success'
+    if: github.event_name == 'push' && always() && needs.verify.result == 'success' && needs.build.result == 'success' && needs.desktop.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
