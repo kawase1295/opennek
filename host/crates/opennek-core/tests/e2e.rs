@@ -7,7 +7,7 @@ use axum::http::{Request, StatusCode};
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
 use http_body_util::BodyExt;
 use opennek_core::host::Host;
-use opennek_core::store::Store;
+use opennek_core::store::{ReceiverPort, Store};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -35,7 +35,7 @@ async fn get_json(host: &Arc<Host>, path: &str) -> Value {
 fn host_with_capture(file: &str) -> Arc<Host> {
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let raw = std::fs::read(fixture(file)).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
@@ -232,7 +232,7 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
     send(
@@ -282,7 +282,7 @@ async fn a_payload_that_does_not_fit_its_config_is_stored_with_the_error() {
     let raw = std::fs::read(fixture("rc3-00763DA3.rssi")).unwrap();
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     let host = Host::new(store, Box::new(FakeStreamer::with_lines(streamer_lines(&raw))));
     send(

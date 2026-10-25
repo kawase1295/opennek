@@ -17,7 +17,8 @@ use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
 use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitter, now_ms};
 use crate::store::{
-    Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage, Store,
+    Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage,
+    ReceiverPort, Store,
 };
 
 /// The receiver merges repetitions until 10 s after the last one; a repetition later than that is ignored for this long
@@ -145,11 +146,28 @@ impl Engine {
         match e {
             RadioEvent::Status(status) => self.radio_status(status),
             RadioEvent::Log(line) => self.console(line),
+            RadioEvent::Found(port) => self.take_kit_port(port),
             RadioEvent::Message(m) => {
                 if let Err(e) = self.handle_sigfox(&m) {
                     self.console(format!("error: {e}"));
                 }
             }
+        }
+    }
+
+    // Unless a port was set meanwhile
+    fn take_kit_port(&self, port: String) {
+        let saved = self.store.settings().and_then(|mut s| {
+            if s.sigfox_port != ReceiverPort::Unset {
+                return Ok(false);
+            }
+            s.sigfox_port = ReceiverPort::Port(port.clone());
+            self.store.save_settings(&s).map(|()| true)
+        });
+        match saved {
+            Ok(true) => self.console(format!("sigfox: found the XIAO kit on {port}")),
+            Ok(false) => {}
+            Err(e) => self.console(format!("error: {e}")),
         }
     }
 

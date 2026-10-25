@@ -113,7 +113,7 @@
           <label class="check"><input type="checkbox" name="acceptUnknownDevices" /><span data-i18n="set.acceptUnknown">Run callbacks for devices without a registered key</span></label>
           <h3 data-i18n="set.sigfox">Sigfox receiver (RC3)</h3>
           <label><span data-i18n="set.sigfoxPort">Receiver port</span><select name="sigfoxPort"></select>
-            <small data-i18n="set.sigfoxPortHint">A receiver flashed with the RSSI streamer (firmware-lsm100a). It receives uplinks from real Sigfox devices.</small></label>
+            <small data-i18n="set.sigfoxPortHint">A receiver flashed with the RSSI streamer (firmware-lsm100a). It receives uplinks from real Sigfox devices. A single XIAO kit plugged in is picked by itself.</small></label>
           <label><span data-i18n="set.sigfoxFreq">Receive frequency (Hz)</span><input name="sigfoxFreq" type="number" min="862000000" max="928000000" step="100" required /></label>
           <label class="check"><input type="checkbox" name="sigfoxDownlink" /><span class="check-text"><span data-i18n="set.sigfoxDownlink">Send downlinks from the receiver (transmits radio waves)</span>
             <small data-i18n="set.sigfoxDownlinkHint">Requires firmware-lsm100a 0.3.0 or later. Sends once in the device's receive window, in the 922.2 MHz band at 10 mW with carrier sense. Enable this only when the transmitter meets your local radio regulations (in Japan: 技適 certification or a radio station license).</small></span></label>

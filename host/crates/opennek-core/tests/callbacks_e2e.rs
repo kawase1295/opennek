@@ -12,7 +12,7 @@ use http_body_util::BodyExt;
 use opennek_core::engine::Engine;
 use opennek_core::host::Host;
 use opennek_core::radio::{RadioEvent, RadioMessage};
-use opennek_core::store::{CallbackInput, Store};
+use opennek_core::store::{CallbackInput, ReceiverPort, Store};
 use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
 use sigfox::frame::{DeviceId, UplinkFields};
@@ -89,7 +89,7 @@ async fn real_sigfox_uplinks_run_callbacks() {
     let (url, hits) = user_server(204, "", Duration::ZERO).await;
     let store = Store::open_in_memory().unwrap();
     let mut s = store.settings().unwrap();
-    s.sigfox_port = "fake0".into();
+    s.sigfox_port = ReceiverPort::Port("fake0".into());
     store.save_settings(&s).unwrap();
     store
         .create_callback(&callback(

@@ -43,14 +43,47 @@ pub struct Settings {
     pub downlink_timeout_ms: u32,
     /// Show and forward messages of devices that are not registered
     pub accept_unknown_devices: bool,
-    /// Port of the receiver; empty when it is not used
-    pub sigfox_port: String,
+    /// Port of the receiver
+    pub sigfox_port: ReceiverPort,
     /// RC3 uplink centre frequency, Hz
     pub sigfox_freq: u32,
     /// Transmit downlinks to real Sigfox devices. It puts a signal on air, so it is off until enabled
     pub sigfox_downlink: bool,
     /// Language of the web UI
     pub language: Language,
+}
+
+/// The sigfoxPort setting: "" until a port is set, null for no receiver, else the port
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Option<String>", into = "Option<String>")]
+pub enum ReceiverPort {
+    /// The host looks for the XIAO kit (`serial::auto_port`). Older versions saved "" for no receiver too, and
+    /// whenever another setting was saved, so their "" is read as this: it was not a choice
+    #[default]
+    Unset,
+    /// No receiver, chosen with `--sigfox off` or in the settings
+    Off,
+    Port(String),
+}
+
+impl From<Option<String>> for ReceiverPort {
+    fn from(v: Option<String>) -> Self {
+        match v {
+            None => ReceiverPort::Off,
+            Some(p) if p.is_empty() => ReceiverPort::Unset,
+            Some(p) => ReceiverPort::Port(p),
+        }
+    }
+}
+
+impl From<ReceiverPort> for Option<String> {
+    fn from(p: ReceiverPort) -> Self {
+        match p {
+            ReceiverPort::Unset => Some(String::new()),
+            ReceiverPort::Off => None,
+            ReceiverPort::Port(p) => Some(p),
+        }
+    }
 }
 
 /// Languages of the web UI (`host/ui/i18n.js`)
@@ -67,7 +100,7 @@ impl Default for Settings {
         Self {
             downlink_timeout_ms: 5000,
             accept_unknown_devices: true,
-            sigfox_port: String::new(),
+            sigfox_port: ReceiverPort::Unset,
             sigfox_freq: 923_200_000,
             sigfox_downlink: false,
             language: Language::En,

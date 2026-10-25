@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use opennek_core::radio::{LinePort, Opener};
+use opennek_core::serial::PortInfo;
 
 pub fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -34,6 +35,10 @@ pub struct FakeStreamer {
     pub broken: Arc<Mutex<Vec<String>>>,
     /// Answers a command with a line, as firmware-lsm100a does ("D ok" for a T command)
     pub answer: Arc<Mutex<Option<Answer>>>,
+    /// The serial ports present
+    pub ports: Arc<Mutex<Vec<PortInfo>>>,
+    /// How often they were listed
+    pub listed: Arc<Mutex<u32>>,
 }
 
 pub type Answer = Box<dyn FnMut(&str) -> Option<String> + Send>;
@@ -76,6 +81,11 @@ impl Opener for FakeStreamer {
             ));
         }
         Ok(Box::new(FakePort(self.clone())))
+    }
+
+    fn ports(&self) -> Vec<PortInfo> {
+        *self.listed.lock().unwrap() += 1;
+        self.ports.lock().unwrap().clone()
     }
 }
 

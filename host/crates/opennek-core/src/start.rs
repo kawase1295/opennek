@@ -17,7 +17,7 @@ use crate::logfile::{LIMIT, LogFile, Logger, log_path};
 use crate::platform::{Os, default_data_dir};
 use crate::radio::{Opener, now_ms};
 use crate::serial::SerialOpener;
-use crate::store::Store;
+use crate::store::{ReceiverPort, Store};
 
 /// What a front end decides about the host; the rest comes from the saved settings
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -28,7 +28,7 @@ pub struct Options {
     pub host: String,
     /// 0 picks a free port; `Running::url` says which
     pub port: u16,
-    /// Saved as the sigfoxPort setting; "off" saves no port
+    /// Saved as the sigfoxPort setting; "off" saves no receiver
     pub sigfox_port: Option<String>,
     /// Saved as the sigfoxFreq setting
     pub sigfox_freq: Option<u32>,
@@ -193,7 +193,12 @@ fn open_store(dir: &Path, options: &Options) -> Result<Store, StartError> {
     let store = Store::open(&dir.join("opennek.db")).map_err(|e| data_dir_error(e.to_string()))?;
     let mut patch = serde_json::Map::new();
     if let Some(port) = &options.sigfox_port {
-        patch.insert("sigfoxPort".into(), json!(if port == "off" { "" } else { port }));
+        let port = if port == "off" {
+            ReceiverPort::Off
+        } else {
+            ReceiverPort::from(Some(port.clone()))
+        };
+        patch.insert("sigfoxPort".into(), json!(port));
     }
     if let Some(freq) = options.sigfox_freq {
         patch.insert("sigfoxFreq".into(), json!(freq));

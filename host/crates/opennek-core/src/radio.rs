@@ -20,7 +20,12 @@ use sigfox::frame::DeviceId;
 use sigfox::frequency::{FrequencyTracker, STREAMER_BIT_RATE, cfo_step_hz};
 use sigfox::receiver::{ReceiverEvent, SigfoxMessage, SigfoxReceiver};
 
+use crate::serial::{PortInfo, auto_port};
+use crate::store::ReceiverPort;
+
 const RETRY: Duration = Duration::from_secs(2);
+/// How often the ports are listed for the XIAO kit while no port is set
+const LOOK: Duration = Duration::from_secs(2);
 /// No samples for this long means the streamer is gone, or never was there
 const STALL: Duration = Duration::from_secs(3);
 const DEFAULT_RATE: u32 = 2000;
@@ -47,12 +52,15 @@ pub trait LinePort: Send {
 
 pub trait Opener: Send + Sync {
     fn open(&self, path: &str) -> io::Result<Box<dyn LinePort>>;
+    /// The ports present, which the XIAO kit is looked for in while no port is set
+    fn ports(&self) -> Vec<PortInfo> {
+        vec![]
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RadioSettings {
-    /// Empty disables the receiver
-    pub port: String,
+    pub port: ReceiverPort,
     pub freq: u32,
     /// Tune to frame 1 of each message, so that its frequency can be measured for a downlink, then back to freq.
     /// It costs reception of other devices' first frames, so it is on only while downlinks are
@@ -145,6 +153,9 @@ pub enum RadioEvent {
     Status(RadioStatus),
     Message(RadioMessage),
     Log(String),
+    /// The XIAO kit is on this port while none is set (`serial::auto_port`): to be saved as the port, which the
+    /// radio opens if the settings then say so
+    Found(String),
 }
 
 pub type SettingsFn = Box<dyn Fn() -> RadioSettings + Send + Sync>;
@@ -335,23 +346,30 @@ fn run(shared: &Shared) {
     while !shared.stopped.load(Ordering::SeqCst) {
         let generation = shared.generation.load(Ordering::SeqCst);
         let settings = (shared.settings)();
-        if settings.port.is_empty() {
-            shared.update(|s| {
-                s.state = RadioState::Off;
-                s.port = None;
-                s.error = None;
-            });
-            shared.wait(generation, Duration::MAX);
-            continue;
-        }
+        let path = match &settings.port {
+            ReceiverPort::Port(path) => path.clone(),
+            ReceiverPort::Off | ReceiverPort::Unset => {
+                shared.update(|s| {
+                    s.state = RadioState::Off;
+                    s.port = None;
+                    s.error = None;
+                });
+                if settings.port == ReceiverPort::Unset {
+                    look_for_kit(shared, generation);
+                } else {
+                    shared.wait(generation, Duration::MAX);
+                }
+                continue;
+            }
+        };
         shared.update(|s| {
             s.state = RadioState::Connecting;
-            s.port = Some(settings.port.clone());
+            s.port = Some(path.clone());
             s.error = None;
         });
-        match shared.opener.open(&settings.port) {
+        match shared.opener.open(&path) {
             Ok(port) => {
-                shared.log(format!("sigfox: opened {}", settings.port));
+                shared.log(format!("sigfox: opened {path}"));
                 Link::new(shared, port, generation, settings.clone()).run();
             }
             Err(e) => {
@@ -362,6 +380,23 @@ fn run(shared: &Shared) {
                 shared.wait(generation, RETRY);
             }
         }
+    }
+}
+
+/// Lists the ports until the kit is found and taken as the port, or the settings change
+fn look_for_kit(shared: &Shared, generation: u64) {
+    while shared.current(generation) {
+        let setting = (shared.settings)().port;
+        if setting != ReceiverPort::Unset {
+            return;
+        }
+        if let Some(path) = auto_port(&shared.opener.ports(), &setting) {
+            (shared.sink)(RadioEvent::Found(path));
+            if (shared.settings)().port != ReceiverPort::Unset {
+                return;
+            }
+        }
+        shared.wait(generation, LOOK);
     }
 }
 

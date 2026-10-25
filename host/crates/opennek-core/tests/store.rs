@@ -1,4 +1,4 @@
-use opennek_core::store::{Auth, DownlinkStatus, Language, MessageQuery, NewMessage, Settings, Store};
+use opennek_core::store::{Auth, DownlinkStatus, Language, MessageQuery, NewMessage, ReceiverPort, Settings, Store};
 use serde_json::{Value, json};
 
 fn uplink(device_id: &str, seq: u16) -> NewMessage {
@@ -89,13 +89,45 @@ fn settings_default_merge_and_validate_like_the_typescript_host() {
     );
     let changed = s.merged(json!({ "sigfoxPort": "/dev/ttyACM0", "unknown": 1 })).unwrap();
     store.save_settings(&changed).unwrap();
-    assert_eq!(store.settings().unwrap().sigfox_port, "/dev/ttyACM0");
+    assert_eq!(
+        store.settings().unwrap().sigfox_port,
+        ReceiverPort::Port("/dev/ttyACM0".into())
+    );
     assert!(
         s.merged(json!({ "sigfoxFreq": 100 }))
             .unwrap_err()
             .contains("sigfoxFreq")
     );
     assert!(s.merged(json!({ "downlinkTimeoutMs": "x" })).is_err());
+}
+
+#[test]
+fn the_receiver_port_is_never_set_none_or_a_port() {
+    let s = Settings::default();
+    assert_eq!(s.sigfox_port, ReceiverPort::Unset);
+    for (json, port) in [
+        (json!(""), ReceiverPort::Unset),
+        (Value::Null, ReceiverPort::Off),
+        (json!("COM4"), ReceiverPort::Port("COM4".into())),
+    ] {
+        let merged = s.merged(json!({ "sigfoxPort": json })).unwrap();
+        assert_eq!(merged.sigfox_port, port);
+        assert_eq!(serde_json::to_value(&merged).unwrap()["sigfoxPort"], json);
+    }
+    assert!(s.merged(json!({ "sigfoxPort": 1 })).is_err());
+}
+
+#[test]
+fn an_empty_port_saved_by_an_older_version_is_read_as_never_set() {
+    // Older versions saved "" for "none" and whenever another setting was saved, so it is no choice
+    let store = Store::open_in_memory().unwrap();
+    store
+        .save_settings(&Settings::default().merged(json!({ "language": "ja" })).unwrap())
+        .unwrap();
+    assert_eq!(store.settings().unwrap().sigfox_port, ReceiverPort::Unset);
+    let off = store.settings().unwrap().merged(json!({ "sigfoxPort": null })).unwrap();
+    store.save_settings(&off).unwrap();
+    assert_eq!(store.settings().unwrap().sigfox_port, ReceiverPort::Off);
 }
 
 #[test]
@@ -166,8 +198,8 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
     assert_eq!(store.list_callbacks().unwrap()[0].id, 1);
     let s = store.settings().unwrap();
     assert_eq!(
-        (s.sigfox_port.as_str(), s.sigfox_downlink, s.sigfox_freq),
-        ("COM4", true, 923_200_000)
+        (s.sigfox_port, s.sigfox_downlink, s.sigfox_freq),
+        (ReceiverPort::Port("COM4".into()), true, 923_200_000)
     );
     // saved before the language was a setting
     assert_eq!(s.language, Language::En);
