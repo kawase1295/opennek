@@ -51,13 +51,13 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    `opennek-<version>-linux-x64`、`opennek-<version>-windows-x64.exe`、`opennek-<version>-macos-arm64`（Apple シリコン）、
    `opennek-<version>-macos-x64`（Intel Mac）があり、1 ファイルだけでほかに入れるものはありません。
    すべてのダウンロードのチェックサムは `SHA256SUMS` にあります。
-4. 実行ファイルは、キットのシリアルポートを指定して起動します（アプリはこの手順は不要で、Web UI でポートを選びます）。
+4. 実行ファイルを起動します（アプリはこの手順は不要です）。XIAO キットは自動で見つかります。他の受信機や、複数のキットから選ぶときは `--sigfox` でシリアルポートを指定します。
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
    .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows（PowerShell）
    ```
-   起動するとブラウザで Web UI が開きます（開かないようにするには `--no-open`）。`--sigfox` を省くと、Web UI でポートを選べます。
+   起動するとブラウザで Web UI が開きます（開かないようにするには `--no-open`）。`--sigfox off` で受信機なしで起動します。
    オプションの一覧は `--help` で表示されます。Windows では `.exe` をダブルクリックしても起動します。
 
    Linux と macOS では、ダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
@@ -70,7 +70,7 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
    一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
 
-<http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
+<http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。OpenNEK は XIAO キットを自動で見つけ（**ログ** タブに `sigfox: found the XIAO kit on <ポート>` と出ます）、そのポートを保存します。**設定 → Sigfox 受信機 (RC3)** でポートを選ぶのは、他の受信機を使うときと、複数のキットを接続しているときだけです。そこで **使わない** を選ぶと、それも保存されます。
 Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
 UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（設定に保存されます）。
 

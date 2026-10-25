@@ -410,14 +410,22 @@ $('#cb-form').addEventListener('submit', async (e) => {
 })
 
 // ---------------- settings
+// sigfoxPort is "" until a port is set (the host then finds the XIAO kit by itself) and null for no receiver
+const NO_RECEIVER = 'off'
+
 async function loadSettings() {
   const [s, ports] = await Promise.all([api('/settings'), api('/serial/ports')])
   state.settings = s
   const f = $('#settings-form')
-  const sfOpts = [{ path: '', label: t('set.notUsed') }, ...ports]
-  if (!sfOpts.some((p) => p.path === s.sigfoxPort)) sfOpts.push({ path: s.sigfoxPort, label: s.sigfoxPort })
-  f.sigfoxPort.innerHTML = sfOpts.map((p) => `<option value="${esc(p.path)}">${esc(p.label)}${p.path && !p.label.includes(p.path) ? ` (${esc(p.path)})` : ''}</option>`).join('')
-  f.sigfoxPort.value = s.sigfoxPort
+  const sfOpts = [
+    { value: '', text: t('set.findKit') },
+    { value: NO_RECEIVER, text: t('set.notUsed') },
+    ...ports.map((p) => ({ value: p.path, text: p.label.includes(p.path) ? p.label : `${p.label} (${p.path})` })),
+  ]
+  const port = s.sigfoxPort ?? NO_RECEIVER
+  if (!sfOpts.some((o) => o.value === port)) sfOpts.push({ value: port, text: port })
+  f.sigfoxPort.innerHTML = sfOpts.map((o) => `<option value="${esc(o.value)}">${esc(o.text)}</option>`).join('')
+  f.sigfoxPort.value = port
   f.sigfoxFreq.value = s.sigfoxFreq
   f.sigfoxDownlink.checked = s.sigfoxDownlink
   f.downlinkTimeoutMs.value = s.downlinkTimeoutMs
@@ -432,7 +440,7 @@ $('#settings-form').addEventListener('submit', async (e) => {
       body: {
         downlinkTimeoutMs: Number(f.downlinkTimeoutMs.value),
         acceptUnknownDevices: f.acceptUnknownDevices.checked,
-        sigfoxPort: f.sigfoxPort.value,
+        sigfoxPort: f.sigfoxPort.value === NO_RECEIVER ? null : f.sigfoxPort.value,
         sigfoxFreq: Number(f.sigfoxFreq.value),
         sigfoxDownlink: f.sigfoxDownlink.checked,
       },

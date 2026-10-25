@@ -58,6 +58,7 @@ const en = {
   'cb.testOk': 'OK: HTTP {status} ({ms} ms)',
   'cb.testFailed': 'Failed: {error}',
   'set.notUsed': "Don't use",
+  'set.findKit': 'Find the XIAO kit',
 }
 
 const ja = {
@@ -104,7 +105,8 @@ const ja = {
   'set.acceptUnknown': '鍵が未登録のデバイスもコールバックを実行する',
   'set.sigfox': 'Sigfox 受信機 (RC3)',
   'set.sigfoxPort': '受信機のポート',
-  'set.sigfoxPortHint': 'RSSI ストリーマ (firmware-lsm100a) を書き込んだ受信機。本物の Sigfox デバイスのアップリンクを受信します。',
+  'set.sigfoxPortHint':
+    'RSSI ストリーマ (firmware-lsm100a) を書き込んだ受信機。本物の Sigfox デバイスのアップリンクを受信します。XIAO キットが 1 台だけ接続されていれば自動で選ばれます。',
   'set.sigfoxFreq': '受信周波数 (Hz)',
   'set.sigfoxDownlink': '受信機からダウンリンクを送信する (電波を出します)',
   'set.sigfoxDownlinkHint':
@@ -192,6 +194,7 @@ const ja = {
   'cb.testOk': '成功: HTTP {status} ({ms} ms)',
   'cb.testFailed': '失敗: {error}',
   'set.notUsed': '使わない',
+  'set.findKit': 'XIAO キットを探す',
 }
 
 export const STRINGS = { en, ja }

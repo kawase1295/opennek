@@ -52,13 +52,14 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    `--host` (access from the LAN): `opennek-<version>-linux-x64`, `opennek-<version>-windows-x64.exe`,
    `opennek-<version>-macos-arm64` (Apple silicon) or `opennek-<version>-macos-x64` (Intel Mac), a single file with
    nothing else to install. `SHA256SUMS` lists the checksums of all downloads.
-4. Start the executable with the kit's serial port (the app needs no step here: pick the port in the web UI):
+4. Start the executable (the app needs no step here). It finds the XIAO kit by itself; `--sigfox` gives the serial port
+   of another receiver, or picks one of several kits:
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
    .\opennek-<version>-windows-x64.exe --sigfox COM3       # Windows (PowerShell)
    ```
-   The web UI opens in your browser (`--no-open` to skip that). Without `--sigfox`, pick the port in the web UI.
+   The web UI opens in your browser (`--no-open` to skip that). `--sigfox off` starts it without a receiver.
    `--help` lists all options. On Windows, double-clicking the `.exe` starts it too.
 
    On Linux and macOS, start it from a terminal opened in the download folder (on Linux, right-click the folder →
@@ -73,8 +74,10 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    `.exe`: choose **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
    `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.
 
-Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
-**Settings → Sigfox receiver (RC3)**. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
+Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). OpenNEK finds the XIAO kit by itself
+(the **Log** tab says `sigfox: found the XIAO kit on <port>`) and remembers its port. Pick the port under
+**Settings → Sigfox receiver (RC3)** only for another receiver or when several kits are plugged in; **Don't use** there
+is remembered too. Send a message from a Sigfox device (`AT$SF=0102`) and it shows up
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
 On Linux, if you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.

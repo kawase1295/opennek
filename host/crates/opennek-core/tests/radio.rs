@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
 use opennek_core::radio::{Radio, RadioEvent, RadioSettings, RadioState};
+use opennek_core::store::ReceiverPort;
 
 fn radio(streamer: &FakeStreamer, port: &str) -> (Radio, Arc<Mutex<Vec<RadioEvent>>>) {
     let events = Arc::new(Mutex::new(vec![]));
@@ -11,7 +12,7 @@ fn radio(streamer: &FakeStreamer, port: &str) -> (Radio, Arc<Mutex<Vec<RadioEven
     let port = port.to_string();
     let radio = Radio::new(
         Box::new(move || RadioSettings {
-            port: port.clone(),
+            port: ReceiverPort::Port(port.clone()),
             freq: 923_200_000,
             follow: false,
         }),
