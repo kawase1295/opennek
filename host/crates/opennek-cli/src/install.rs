@@ -32,7 +32,7 @@ impl InstallPaths {
 /// Absolute paths, so the entry works whether or not ~/.local/bin is on PATH; Exec is quoted for spaces
 pub fn desktop_entry(p: &InstallPaths) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=OpenNEK\nComment=Local network for real Sigfox devices\n\
+        "[Desktop Entry]\nType=Application\nName=OpenNEK (Terminal)\nComment=Local network for real Sigfox devices\n\
          Exec=\"{}\"\nIcon={}\nTerminal=true\nCategories=Development;Network;\n",
         p.bin.display(),
         p.icon.display()

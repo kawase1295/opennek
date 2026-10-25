@@ -17,7 +17,7 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
 
 | 部品 | 中身 |
 |---|---|
-| `host/` | ホスト。Rust の単一実行ファイル（axum、SQLite）。Sigfox の解読器、Web UI（`host/ui` を同梱）、コールバック、ダウンリンク |
+| `host/` | ホスト。Rust の単一実行ファイル（axum、SQLite）。Sigfox の解読器、Web UI（`host/ui` を同梱）、コールバック、ダウンリンク。デスクトップアプリ（`host/crates/opennek-desktop`、Tauri）は同じ UI をウィンドウで表示 |
 | `tools/lsm/` | LSM100A 受信機用の Node ツール。ブリッジ経由のファーム書き込み、RSSI/CFO の録音 |
 | `firmware/` | PlatformIO (Arduino) ファーム。`radio-xiao-sx1262` = 無線機。Wio-SX1262 の RSSI をホストへ流し、ダウンリンクを送信する |
 | `docs/protocol.ja.md` | コールバックとダウンリンクの仕様 |
@@ -31,11 +31,27 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest) から OS に合ったホストをダウンロードします。
-   実行ファイル 1 つだけで、ほかに入れるものはありません。
+3. [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest) から OpenNEK をダウンロードします。
+   **Linux と Windows ではデスクトップアプリ**がいちばん簡単です。Web UI を専用のウィンドウで表示し、端末もブラウザも使いません。
+   - **Linux**（Ubuntu 24.04 以降、または同じくらい新しいディストリビューション）: `opennek-desktop-<version>-linux-x64.deb`
+     ```bash
+     sudo apt install ./opennek-desktop-*-linux-x64.deb
+     ```
+     アプリのメニューに OpenNEK が追加されます。ログイン中のユーザーが XIAO キットのシリアルポートを開けるようにする
+     udev ルールも入るので、グループへの追加やログインし直しは要りません。`sudo apt remove io-github-kawase1295-opennek` で
+     削除できます（データは残ります）。古いディストリビューションでは下の実行ファイルを使ってください。
+   - **Windows**: `opennek-desktop-<version>-windows-x64-setup.exe`。管理者権限なしで自分のユーザーにだけインストールされ、
+     スタートメニューに OpenNEK が追加されます。WebView2 が必要です。Windows 10 / 11 には通常入っていますが、
+     無い場合はインストーラがダウンロードするので、そのときはインターネット接続が必要です。
+
+   アプリは <http://127.0.0.1:8085/> で待ち受けます（8085 を他のソフトが使っていれば別の空きポート。どちらかは **ログ** タブに出ます）。
+   この PC からしか開けません。ウィンドウを閉じると OpenNEK は終了します。
+
+   **実行ファイル**は、macOS、古い Linux、デスクトップの無い環境、`--sigfox` や `--host`（LAN からのアクセス）などのオプションを使うとき向けです。
    `opennek-<version>-linux-x64`、`opennek-<version>-windows-x64.exe`、`opennek-<version>-macos-arm64`（Apple シリコン）、
-   `opennek-<version>-macos-x64`（Intel Mac）があります。チェックサムは `SHA256SUMS` にあります。
-4. キットのシリアルポートを指定して起動します。
+   `opennek-<version>-macos-x64`（Intel Mac）があり、1 ファイルだけでほかに入れるものはありません。
+   すべてのダウンロードのチェックサムは `SHA256SUMS` にあります。
+4. 実行ファイルは、キットのシリアルポートを指定して起動します（アプリはこの手順は不要で、Web UI でポートを選びます）。
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
@@ -47,22 +63,23 @@ Seeed Studio の **XIAO ESP32S3 & Wio-SX1262 キット**を無線機として使
    Linux と macOS では、ダウンロードしたフォルダで開いた端末から起動します（Linux ではフォルダ内で右クリック → **端末で開く**）。
    ファイルマネージャーでダブルクリックしても起動しません。Linux では「There is no app installed for executable files」と表示されます。
 
-   Linux では一度 `./opennek-*-linux-x64 install` を実行すると、アプリのメニューに OpenNEK が追加され、以後はそこからクリックで起動できます
-   （端末のウィンドウにログが出て、閉じると終了します）。`opennek uninstall` で元に戻せます。
+   Linux では一度 `./opennek-*-linux-x64 install` を実行すると、アプリのメニューに **OpenNEK (Terminal)** として追加され、
+   以後はそこからクリックで起動できます（端末のウィンドウにログが出て、閉じると終了します）。`opennek uninstall` で元に戻せます。
 
-   実行ファイルには署名がありません。Windows で SmartScreen の「Windows によって PC が保護されました」が出たら、
+   ダウンロードしたファイルには署名がありません。Windows でインストーラや `.exe` に SmartScreen の「Windows によって PC が保護されました」が出たら、
    **詳細情報 → 実行** を選んでください。macOS では Gatekeeper がダウンロードしたファイルを止めるので、
    一度 `xattr -d com.apple.quarantine opennek-*-macos-*` を実行するか、Finder で右クリックして **開く** を選んでください。
 
 <http://127.0.0.1:8085/> を開きます。キットは 923.2 MHz で受信します（`--sigfox-freq <hz>` で変更）。ポートは保存されます。**設定 → Sigfox 受信機 (RC3)** でも選べます。
 Sigfox デバイスからメッセージを送ると（`AT$SF=0102`）、メッセージ一覧に表示されます。
-UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（ブラウザに保存されます）。
+UI は英語で表示されます。右上の言語メニューで「日本語」を選ぶと日本語になります（設定に保存されます）。
 
 Linux でシリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
+アプリでも、udev ルールの対象の XIAO キット以外の受信機を使うときは同じです。
 
 データは `~/.local/share/opennek/` に保存されます（Windows は `%APPDATA%\opennek\`、macOS は `~/Library/Application Support/opennek/`）。
-データベースと受信機のシリアルポートを占有するため、OpenNEK はデータディレクトリごとに 1 つしか動きません。
-2 つ目の `opennek` は動作中の URL を表示して終了します。`--data <dir>` で別のディレクトリを指定すれば別のインスタンスになります。
+データベースと受信機のシリアルポートを占有するため、OpenNEK はデータディレクトリごとに 1 つしか動きません（アプリと実行ファイルで共通）。
+2 つ目は動作中の URL を表示して終了します。`--data <dir>` で別のディレクトリを指定すれば別のインスタンスになります。
 
 ### アップリンクの認証
 
@@ -161,7 +178,8 @@ Windows には WebView2 が入っています。アプリは 127.0.0.1:8085 で�
 `tools/lsm` の LSM100A 用ツールは Node で動きます（`cd tools/lsm && npm install`）。必要なのはファームを扱うときだけです。
 
 main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョンと一致させる）を push すると、
-実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
+実行ファイルとデスクトップアプリのインストーラがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
+インストーラを手元で作るには、`host/crates/opennek-desktop` で `npx @tauri-apps/cli@2.12.4 build --bundles deb`（Windows では `nsis`）を実行します。
 
 ```bash
 scripts/check     # CI と同じ検査: ホストとデスクトップアプリのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
