@@ -35,12 +35,14 @@
   </div>
   <nav>
     {#each TABS as tab (tab)}
-      <button class:active={app.tab === tab} onclick={() => app.showTab(tab)}>{NAV[tab]}</button>
+      <button class:active={app.tab === tab} aria-current={app.tab === tab ? 'page' : undefined} onclick={() => app.showTab(tab)}>{NAV[tab]}</button>
     {/each}
   </nav>
-  <div class="pills">
-    <div class="pill {pill.kind}" title={pill.title || t('pill.radio')}>{pill.text}</div>
-    <select class="lang" aria-label="Language" bind:value={chosen} onchange={changeLang}>
+  <div class="header-end">
+    <span class="radio-pill {pill.tone}" title={pill.title || t('pill.radio')}>
+      <i></i>{pill.label}{#if pill.detail}<span class="detail">{pill.detail}</span>{/if}
+    </span>
+    <select aria-label="Language" bind:value={chosen} onchange={changeLang}>
       {#each Object.entries(LANGUAGES) as [code, name] (code)}
         <option value={code}>{name}</option>
       {/each}

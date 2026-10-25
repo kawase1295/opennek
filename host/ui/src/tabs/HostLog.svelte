@@ -3,6 +3,8 @@
   import { app } from '../lib/app.svelte'
   import { fmtClock, fmtTime } from '../lib/format'
   import { t } from '../lib/i18n'
+  import EmptyState from '../components/EmptyState.svelte'
+  import PageHeader from '../components/PageHeader.svelte'
 
   let box = $state<HTMLDivElement>()
   // 一番下にいる間は新しい行に付いていく (ターミナルと同じ)。上へスクロールしたら止まる
@@ -20,6 +22,7 @@
   })
 </script>
 
+<PageHeader title={t('nav.log')} intro={t('hostLog.intro')} />
 {#if app.hostLog.length}
   <div class="host-log mono" bind:this={box} onscroll={onScroll}>
     {#each app.hostLog as l, i (i)}
@@ -27,5 +30,5 @@
     {/each}
   </div>
 {:else}
-  <p class="empty">{t('hostLog.empty')}</p>
+  <EmptyState title={t('hostLog.emptyTitle')} body={t('hostLog.empty')} boxed />
 {/if}

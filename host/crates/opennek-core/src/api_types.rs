@@ -14,6 +14,7 @@ use crate::serial::PortInfo;
 use crate::server::{Status, TestResult};
 use crate::store::{
     Auth, Callback, CallbackInput, CallbackLog, Device, DownlinkStatus, Language, Message, ReceiverPort, Settings,
+    Theme,
 };
 
 const HEADER: &str = "// Generated from the host's Rust types by `UPDATE_API_TYPES=1 cargo test -p opennek-core api_types`.\n\
@@ -26,6 +27,7 @@ fn declarations() -> String {
         Settings::decl(&cfg),
         ReceiverPort::decl(&cfg),
         Language::decl(&cfg),
+        Theme::decl(&cfg),
         Device::decl(&cfg),
         CallbackInput::decl(&cfg),
         Callback::decl(&cfg),

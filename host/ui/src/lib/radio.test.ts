@@ -14,26 +14,33 @@ const status = (s: Partial<RadioStatus>): RadioStatus => ({
   ...s,
 })
 
-test('the pill shows the frequency while receiving', () => {
+test('while receiving: the frequency', () => {
   expect(radioPill(status({ state: 'connected', port: 'COM4', freq: 923_200_000 }))).toEqual({
-    kind: 'connected',
-    text: 'Sigfox · 923.2 MHz',
+    tone: 'connected',
+    label: 'Receiving',
+    detail: '923.2 MHz',
     title: 'COM4',
   })
+  // the frequency comes with the firmware's first line
+  expect(radioPill(status({ state: 'connected', port: 'COM4' })).detail).toBe('COM4')
 })
 
-test('the pill shows the state otherwise, with the error as its title', () => {
+test('waiting and disconnected name the port; the error is the title', () => {
   expect(radioPill(status({ state: 'connecting', port: 'COM4' }))).toEqual({
-    kind: 'connecting',
-    text: 'Sigfox · Waiting for reply',
+    tone: 'connecting',
+    label: 'Waiting for reply',
+    detail: 'COM4',
     title: 'COM4',
   })
   expect(radioPill(status({ state: 'disconnected', port: 'COM4', error: 'gone' }))).toEqual({
-    kind: 'disconnected',
-    text: 'Sigfox · Disconnected',
+    tone: 'error',
+    label: 'Disconnected',
+    detail: 'COM4',
     title: 'gone',
   })
-  // off looks like disconnected, as before
-  expect(radioPill(status({ state: 'off' }))).toEqual({ kind: 'disconnected', text: 'Sigfox · Off', title: '' })
-  expect(radioPill(null)).toEqual({ kind: 'disconnected', text: 'Sigfox · Off', title: '' })
+})
+
+test('no receiver is grey, not an error', () => {
+  expect(radioPill(status({ state: 'off' }))).toEqual({ tone: 'off', label: 'No receiver', detail: '', title: '' })
+  expect(radioPill(null).tone).toBe('off')
 })

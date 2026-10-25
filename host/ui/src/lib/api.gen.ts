@@ -21,11 +21,17 @@ sigfoxDownlink: boolean,
 /**
  * Language of the web UI; None until one is chosen, and the UI follows the browser's language
  */
-language: Language | null, };
+language: Language | null, 
+/**
+ * Light or dark web UI
+ */
+theme: Theme, };
 
 export type ReceiverPort = string | null;
 
 export type Language = "en" | "ja";
+
+export type Theme = "system" | "light" | "dark";
 
 export type Device = { id: string, name: string, 
 /**

@@ -52,6 +52,20 @@ pub struct Settings {
     pub sigfox_downlink: bool,
     /// Language of the web UI; None until one is chosen, and the UI follows the browser's language
     pub language: Option<Language>,
+    /// Light or dark web UI
+    pub theme: Theme,
+}
+
+/// The web UI's colours; kept with the host like the language, so a change of port keeps it
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum Theme {
+    /// Follow the OS
+    #[default]
+    System,
+    Light,
+    Dark,
 }
 
 /// The sigfoxPort setting: "" until a port is set, null for no receiver, else the port
@@ -106,6 +120,7 @@ impl Default for Settings {
             sigfox_freq: 923_200_000,
             sigfox_downlink: false,
             language: None,
+            theme: Theme::System,
         }
     }
 }
@@ -122,6 +137,9 @@ impl Settings {
         // serde's unknown variant error does not name the field
         if let Some(v) = patch.get("language") {
             Option::<Language>::deserialize(v).map_err(|e| format!("language: {e}"))?;
+        }
+        if let Some(v) = patch.get("theme") {
+            Theme::deserialize(v).map_err(|e| format!("theme: {e}"))?;
         }
         merged.extend(patch);
         let s: Settings = serde_json::from_value(Value::Object(merged)).map_err(|e| format!("body: {e}"))?;

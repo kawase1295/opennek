@@ -4,10 +4,13 @@
   import type { Callback } from '../lib/api.gen'
   import { app } from '../lib/app.svelte'
   import { logBadge } from '../lib/badges'
+  import { ask } from '../lib/confirm.svelte'
   import { fmtTime } from '../lib/format'
   import { t } from '../lib/i18n'
   import { errorText, showToast } from '../lib/toast.svelte'
   import Badge from '../components/Badge.svelte'
+  import EmptyState from '../components/EmptyState.svelte'
+  import PageHeader from '../components/PageHeader.svelte'
   import CallbackDialog from './CallbackDialog.svelte'
 
   let editor: CallbackDialog
@@ -16,14 +19,15 @@
   onMount(() => void app.loadCallbackLogs())
 
   async function remove(c: Callback): Promise<void> {
-    if (!confirm(t('cb.confirmDelete'))) return
+    if (!(await ask({ title: t('cb.confirmDelete'), body: c.name || c.url, confirm: t('common.delete'), danger: true }))) return
     await api.deleteCallback(c.id)
     await app.loadCallbacks()
   }
 
   // 本物のリクエストが飛ぶので、宛先を見せてから送る
   async function test(c: Callback): Promise<void> {
-    if (!confirm(t('cb.confirmTest', { method: c.method, url: c.url }))) return
+    const body = t('cb.confirmTest', { method: c.method, url: c.url })
+    if (!(await ask({ title: t('cb.confirmTestTitle'), body, confirm: t('cb.test') }))) return
     testing = c.id
     try {
       const { result } = await api.testCallback(c.id)
@@ -40,18 +44,18 @@
   }
 </script>
 
-<div class="toolbar">
-  <span class="muted">{t('cb.intro')}</span>
-  <span class="spacer"></span>
-  <button class="primary" onclick={() => editor.open(null)}>{t('common.add')}</button>
-</div>
+<PageHeader title={t('nav.callbacks')} count={app.callbacks.length} intro={t('cb.intro')}>
+  {#snippet actions()}
+    <button class="primary" onclick={() => editor.open(null)}>{t('common.add')}</button>
+  {/snippet}
+</PageHeader>
 <div class="cards">
   {#each app.callbacks as c (c.id)}
     <div class="card">
-      <div>
+      <div class="head">
         <strong>{c.name || t('cb.untitled', { id: c.id })}</strong>
-        {#if c.enabled}<span class="badge ok">{t('cb.enabled')}</span>{:else}<span class="badge muted">{t('cb.disabled')}</span>{/if}
-        {#if c.downlink}<span class="badge warn">{t('cb.downlink')}</span>{/if}
+        {#if c.enabled}<span class="badge ok dot">{t('cb.enabled')}</span>{:else}<span class="badge neutral soft">{t('cb.disabled')}</span>{/if}
+        {#if c.downlink}<span class="badge accent">{t('cb.downlink')}</span>{/if}
       </div>
       <div class="url" title={c.url}><code>{c.method}</code> {c.url}</div>
       <div class="muted">{t('cb.target', { devices: c.devices || t('cb.allDevices') })}</div>
@@ -63,8 +67,8 @@
     </div>
   {/each}
 </div>
-{#if app.callbacks.length === 0}<p class="empty">{t('cb.empty')}</p>{/if}
-<h3>{t('cb.log')}</h3>
+{#if app.callbacks.length === 0}<EmptyState title={t('cb.empty')} boxed />{/if}
+<h3 class="section">{t('cb.log')}</h3>
 <div class="table-wrap">
   <table>
     <thead>

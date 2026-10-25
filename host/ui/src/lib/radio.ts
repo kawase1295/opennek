@@ -1,16 +1,26 @@
 // ヘッダーの受信機の表示
+// 受信機を使わない (off) のは灰色、つながらないときだけ赤にする
 import type { RadioStatus } from './api.gen'
 import { mhz } from './format'
 import { t } from './i18n'
 
-export type RadioPill = { kind: 'connected' | 'connecting' | 'disconnected'; text: string; title: string }
+export type RadioPill = {
+  tone: 'off' | 'connecting' | 'connected' | 'error'
+  label: string
+  // 受信中は周波数、それ以外はポート
+  detail: string
+  title: string
+}
+
+const TONE = { off: 'off', connecting: 'connecting', connected: 'connected', disconnected: 'error' } as const
 
 export function radioPill(r: RadioStatus | null): RadioPill {
   const state = r?.state ?? 'off'
-  const label = r?.state === 'connected' && r.freq ? mhz(r.freq, 1) : t(`radio.${state}`)
+  const freq = r?.state === 'connected' && r.freq ? mhz(r.freq, 1) : ''
   return {
-    kind: state === 'off' ? 'disconnected' : state,
-    text: `Sigfox · ${label}`,
+    tone: TONE[state],
+    label: t(`radio.${state}`),
+    detail: freq || (r?.port ?? ''),
     title: r?.error || r?.port || '',
   }
 }
