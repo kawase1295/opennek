@@ -149,13 +149,25 @@ cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
 The web UI in `host/ui` is plain JS without a build step and is embedded in the executable.
+
+The desktop app (`host/crates/opennek-desktop`, [Tauri](https://tauri.app/)) shows the same web UI in its own window.
+Plain `cargo` commands leave it out, so the `opennek` executable stays a static binary; build it by name:
+
+```bash
+cd host
+cargo run -p opennek-desktop
+```
+
+On Linux it needs the WebKitGTK development files
+(`sudo apt-get install pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev` on Ubuntu / Debian);
+Windows has WebView2 already. The app listens on 127.0.0.1:8085, or on a free port when other software has 8085.
 The LSM100A tools in `tools/lsm` run on Node (`cd tools/lsm && npm install`); only firmware work needs them.
 
 Pushing a version tag (`v0.2.0`, equal to the version in `host/Cargo.toml`) on main builds the executables and
 publishes them on GitHub Releases (`.github/workflows/release.yml`).
 
 ```bash
-scripts/check     # what CI runs: format, lint and test the host, test the UI strings, the LSM100A tools and the firmware natively
+scripts/check     # what CI runs: format, lint and test the host and the desktop app, test the UI strings, the LSM100A tools and the firmware natively
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \

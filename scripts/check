@@ -8,6 +8,9 @@ cd "$root/host"
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+# The desktop app is left out of default-members (it links webkit2gtk / WebView2), so it is checked on its own
+cargo clippy --package opennek-desktop --all-targets --locked -- -D warnings
+cargo test --package opennek-desktop --locked
 # The web UI is plain JS embedded in the host
 node --test ui/i18n.test.mjs
 

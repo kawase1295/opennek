@@ -1,0 +1,19 @@
+[package]
+name = "opennek-desktop"
+description = "OpenNEK as a desktop app: the host and its web UI in one window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+opennek-core = { path = "../opennek-core" }
+rfd = { version = "0.17.2", default-features = false, features = ["gtk3"] }
+tauri = { version = "2.12.5", features = [] }
+url = "2.5.8"

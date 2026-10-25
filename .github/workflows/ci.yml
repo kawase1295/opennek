@@ -21,8 +21,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: host
-      # The pty tests need socat; they are skipped where it is missing (Windows)
+      # The pty tests need socat; they are skipped where it is missing (Windows). The desktop app builds
+      # against webkit2gtk (Tauri); Windows has WebView2
       - if: runner.os == 'Linux'
-        run: sudo apt-get install -y socat
+        run: sudo apt-get update && sudo apt-get install -y socat libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev
       - run: scripts/check
         shell: bash
