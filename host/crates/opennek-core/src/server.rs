@@ -21,7 +21,7 @@ use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::{RadioStatus, now_ms};
 use crate::serial::list_serial_ports;
-use crate::store::{CallbackInput, DeviceInput, Message, MessageQuery, Settings};
+use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings};
 
 // The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
 const INDEX_HTML: &str = include_str!("../../../ui/dist/index.html");
@@ -217,8 +217,28 @@ async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>)
     to_json(host.engine.store().list_messages(&query)?)
 }
 
+/// GET /api/callbacks: each callback with its newest answer
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct CallbackSummary {
+    #[serde(flatten)]
+    pub callback: Callback,
+    pub last_log: Option<CallbackLog>,
+}
+
 async fn callbacks(State(host): Shared) -> ApiResult {
-    to_json(host.engine.store().list_callbacks()?)
+    let store = host.engine.store();
+    let mut last = store.last_logs()?;
+    let list: Vec<CallbackSummary> = store
+        .list_callbacks()?
+        .into_iter()
+        .map(|callback| CallbackSummary {
+            last_log: last.remove(&callback.id),
+            callback,
+        })
+        .collect();
+    to_json(list)
 }
 
 fn callback_input(body: Value) -> Result<CallbackInput, ApiError> {
@@ -261,6 +281,12 @@ async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult
     let id = id.parse().map_err(|_| not_found())?;
     let store = host.engine.store();
     let cb = store.get_callback(id)?.ok_or_else(not_found)?;
+    if !cb.input.is_sent() {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "this callback is not sent by OpenNEK: only DATA callbacks to a URL are".into(),
+        ));
+    }
     let recent = store.list_messages(&MessageQuery {
         limit: Some(50),
         ..Default::default()

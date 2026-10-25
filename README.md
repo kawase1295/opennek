@@ -133,20 +133,29 @@ The firmware refuses anything outside these limits, whatever the host asks:
 
 ## Callbacks
 
-Configure the URL, headers and body in the **Callbacks** tab. The body supports the same
-variables as Sigfox custom callbacks (`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}`
-`{station}` `{customData#name}`, … — full list in [docs/protocol.md](docs/protocol.md)).
+Callbacks have the types, channels and fields of a device type's callbacks in the Sigfox Backend: **Type**
+(DATA UPLINK / BIDIR, SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED, ERROR), **Channel** (URL, BATCH_URL,
+EMAIL), Send duplicate, Custom payload config, Url pattern, Use HTTP Method, Send SNI, Headers, Content type and Body.
+OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA callbacks to
+a URL; the other types and channels are kept as in the Backend but not sent yet, which the **Callbacks** tab shows.
+The url pattern, headers and body support the same variables as Sigfox custom callbacks (`{device}` `{time}`
+`{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#name}`, … — full list in
+[docs/protocol.md](docs/protocol.md)).
 
 ```json
 {"device":"{device}","time":{time},"data":"{data}","seqNumber":{seqNumber},"rssi":{rssi}}
 ```
 
-- **Payload format** (per device): with something like `temp::int:16:little-endian hum::uint:8 door:0:bool:7`,
-  decoded values are shown in the UI and are available in callbacks as `{customData#temp}`.
+- **Custom payload config** (per callback, as in the Backend): with something like
+  `temp::int:16:little-endian hum::uint:8 door:0:bool:7`, the values are available as `{customData#temp}`. A callback
+  without one uses the device's **payload format**, which is also what the UI shows decoded.
 - **Downlink data**: set the device's downlink mode to "Static data" (e.g. `{time}0102{rssi}`) or to
-  "Callback response". For the latter, enable "Take the downlink data from the response" on the callback;
-  if the response is `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
-- The **Send test** button fires the callback with the latest message (not recorded in the logs).
+  "Callback response". For the latter, make a DATA BIDIR callback and choose it in the Downlink column of the list
+  (a new BIDIR callback is not chosen, as in the Backend); if the response is
+  `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
+- **Send SNI** is on for new callbacks (the Backend leaves it off), since most HTTPS servers need it.
+- The **Send test** button fires the callback with the latest message (not recorded in the history). Each callback's
+  last answer is in the list, and its history behind it.
 
 ## Using it on WSL2
 

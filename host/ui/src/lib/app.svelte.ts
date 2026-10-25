@@ -1,6 +1,6 @@
 // 画面全体の状態と、それを API から読み込む処理。表示の組み立ては lib/*.ts の関数とコンポーネントが受け持つ
 import { SvelteSet } from 'svelte/reactivity'
-import type { Callback, CallbackLog, ConsoleLine, Device, Event, Message, RadioStatus } from './api.gen'
+import type { CallbackSummary, ConsoleLine, Device, Event, Message, RadioStatus } from './api.gen'
 import { api, subscribe } from './api'
 import { appendLines, reloadLines } from './hostLog'
 import { t } from './i18n'
@@ -10,14 +10,19 @@ export const TABS = ['messages', 'devices', 'callbacks', 'log', 'settings'] as c
 export type Tab = (typeof TABS)[number]
 
 const PAGE = 100
-const CALLBACK_LOGS = 50
+
+// コールバックの画面: 一覧、登録・編集 (id が null なら新規、copy は複製の元)、1 つのコールバックの履歴
+export type CallbackView =
+  | { kind: 'list' }
+  | { kind: 'edit'; id: number | null; copy?: number }
+  | { kind: 'history'; id: number }
 
 class AppState {
   tab = $state<Tab>('messages')
   radio = $state<RadioStatus | null>(null)
   devices = $state<Device[]>([])
-  callbacks = $state<Callback[]>([])
-  callbackLogs = $state<CallbackLog[]>([])
+  callbacks = $state<CallbackSummary[]>([])
+  callbackView = $state<CallbackView>({ kind: 'list' })
   // 新しい順。deviceFilter が空でなければそのデバイスのものだけ
   messages = $state<Message[]>([])
   deviceFilter = $state('')
@@ -30,6 +35,7 @@ class AppState {
 
   showTab(tab: Tab): void {
     this.tab = tab
+    if (tab === 'callbacks') this.callbackView = { kind: 'list' }
     if (location.hash !== `#${tab}`) history.replaceState(null, '', `#${tab}`)
   }
 
@@ -39,10 +45,6 @@ class AppState {
 
   async loadCallbacks(): Promise<void> {
     this.callbacks = await api.callbacks()
-  }
-
-  async loadCallbackLogs(): Promise<void> {
-    this.callbackLogs = await api.callbackLogs({ limit: CALLBACK_LOGS })
   }
 
   async loadMessages(append = false): Promise<void> {
@@ -95,7 +97,8 @@ class AppState {
         this.live.add(e.message.id)
         break
       case 'callbackLog':
-        if (this.tab === 'callbacks') void this.loadCallbackLogs()
+        // the list shows each callback's newest answer
+        this.callbacks = this.callbacks.map((c) => (c.id === e.log.callbackId ? { ...c, lastLog: e.log } : c))
         break
     }
   }
