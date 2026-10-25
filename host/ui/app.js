@@ -1,5 +1,5 @@
 // OpenNEK Web UI (ビルド不要の素の JS)
-import { LANGUAGES, lang, setLang, t, translatePage } from './i18n.js'
+import { chooseLang, LANGUAGES, lang, setLang, t, takeLegacyLang, translatePage } from './i18n.js'
 
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
@@ -37,6 +37,7 @@ function showTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`))
   if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`)
   if (name === 'callbacks') loadLogs()
+  if (name === 'log') followHostLog()
   if (name === 'settings') loadSettings()
 }
 $$('nav button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)))
@@ -176,6 +177,54 @@ function logBlock(l) {
     ${l.ok ? '<span class="badge ok">' : '<span class="badge bad">'}${esc(l.status ?? l.error)}</span>
     <span class="muted">${l.durationMs} ms</span>${l.error && l.status ? ` <span class="muted">${esc(l.error)}</span>` : ''}
     ${l.response ? `<pre>${esc(l.response)}</pre>` : ''}</div>`
+}
+
+// ---------------- host log
+const hostLog = $('#host-log')
+// the host keeps as many
+const HOST_LOG_LINES = 1000
+// at the bottom unless the user scrolled up
+let hostLogFollows = true
+// console events that came while the log was loading
+let hostLogQueue = null
+const logKey = (l) => `${l.time} ${l.line}`
+const fmtLogTime = (ms) => new Date(ms).toLocaleTimeString()
+
+function followHostLog() {
+  if (hostLogFollows) hostLog.scrollTop = hostLog.scrollHeight
+}
+// a hidden log does not scroll, so this is noted only while it is shown
+hostLog.addEventListener('scroll', () => {
+  hostLogFollows = hostLog.scrollHeight - hostLog.scrollTop - hostLog.clientHeight < 4
+})
+
+function appendHostLog(lines) {
+  for (const l of lines) {
+    const div = document.createElement('div')
+    div.innerHTML = `<time title="${esc(fmtTime(l.time))}">${esc(fmtLogTime(l.time))}</time>${esc(l.line)}`
+    hostLog.append(div)
+  }
+  while (hostLog.children.length > HOST_LOG_LINES) hostLog.firstElementChild.remove()
+  $('#host-log-empty').classList.toggle('hidden', hostLog.children.length > 0)
+  followHostLog()
+}
+
+function onConsole(l) {
+  if (hostLogQueue) hostLogQueue.push(l)
+  else appendHostLog([l])
+}
+
+// On every (re)connect of the events: the lines the host kept, then those that came meanwhile
+async function loadHostLog() {
+  hostLogQueue = []
+  const lines = await api('/logs').catch(() => null)
+  const queued = hostLogQueue
+  hostLogQueue = null
+  // the host is gone again: keep what is shown
+  if (!lines) return appendHostLog(queued)
+  const kept = new Set(lines.map(logKey))
+  hostLog.innerHTML = ''
+  appendHostLog([...lines, ...queued.filter((l) => !kept.has(logKey(l)))])
 }
 
 // ---------------- devices
@@ -410,7 +459,9 @@ $('#settings-form').addEventListener('submit', async (e) => {
 // ---------------- live events
 function connectEvents() {
   const es = new EventSource('/api/events')
+  es.addEventListener('open', loadHostLog)
   es.addEventListener('radio', (e) => renderRadio(JSON.parse(e.data).status))
+  es.addEventListener('console', (e) => onConsole(JSON.parse(e.data)))
   es.addEventListener('message', (e) => {
     const { message } = JSON.parse(e.data)
     if (!state.devices.some((d) => d.id === message.deviceId)) loadDevices()
@@ -423,25 +474,43 @@ function connectEvents() {
 }
 
 // ---------------- language
-const langSel = $('#lang')
-langSel.innerHTML = Object.entries(LANGUAGES)
-  .map(([code, name]) => `<option value="${code}">${name}</option>`)
-  .join('')
-langSel.value = lang
-// 動的に組み立てた部分も含めて描き直すのは手間なので、言語を覚えて読み込み直す
-langSel.addEventListener('change', () => {
-  setLang(langSel.value)
-  location.reload()
-})
+// 文字列を出す前に設定から言語を決める。旧版が localStorage に覚えた言語は一度だけ設定へ移す
+async function loadLang() {
+  const saved = await api('/settings').then((s) => s.language, () => undefined)
+  const choice = chooseLang(saved, takeLegacyLang())
+  setLang(choice.lang)
+  if (choice.migrate) await api('/settings', { method: 'PUT', body: { language: choice.lang } }).catch(() => {})
+}
+
+function setupLangSelect() {
+  const langSel = $('#lang')
+  langSel.innerHTML = Object.entries(LANGUAGES)
+    .map(([code, name]) => `<option value="${code}">${name}</option>`)
+    .join('')
+  langSel.value = lang
+  // 動的に組み立てた部分も含めて描き直すのは手間なので、設定に保存して読み込み直す
+  langSel.addEventListener('change', async () => {
+    try {
+      await api('/settings', { method: 'PUT', body: { language: langSel.value } })
+      location.reload()
+    } catch (err) {
+      langSel.value = lang
+      toast(err.message)
+    }
+  })
+}
 
 // ---------------- boot
-translatePage()
 ;(async () => {
+  await loadLang()
+  translatePage()
+  setupLangSelect()
+  document.documentElement.classList.remove('booting')
   const status = await api('/status')
   renderRadio(status.radio)
   await Promise.all([loadDevices(), loadCallbacks()])
   await loadMessages()
   connectEvents()
   const tab = location.hash.slice(1)
-  showTab(['messages', 'devices', 'callbacks', 'settings'].includes(tab) ? tab : 'messages')
+  showTab(['messages', 'devices', 'callbacks', 'log', 'settings'].includes(tab) ? tab : 'messages')
 })()

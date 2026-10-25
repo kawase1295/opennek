@@ -1,0 +1,30 @@
+[package]
+name = "opennek-core"
+description = "The OpenNEK host shared by its front ends: decode Sigfox uplinks from a USB receiver, run Sigfox-compatible callbacks, send downlinks and serve the web UI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum = "0.8.9"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+serialport = { version = "4.10.1", default-features = false }
+sigfox = { path = "../sigfox" }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }
+ureq = "3.5.0"
+url = "2.5.8"
+
+[dev-dependencies]
+base64 = "0.23.1"
+http-body-util = "0.1.5"
+tempfile = "3.27.0"
+tokio-stream = "0.1.19"
+tower = { version = "0.5.3", features = ["util"] }

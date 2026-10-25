@@ -5,6 +5,9 @@
 
 namespace sigfox {
 
+// M_PI is not standard C++ and is missing from some libcs (zig's Windows target)
+constexpr double kPi = 3.14159265358979323846;
+
 float noiseFloor(const float* dbm, size_t n) {
   if (!n) return -120;
   std::vector<float> sorted(dbm, dbm + n);
@@ -71,11 +74,11 @@ bool burstBits(const float* seg, size_t n, int rate, Bits& out) {
   // Anchor the grid on the mean phase of the first dips (circular mean modulo one bit)
   double c = 0, s = 0;
   for (size_t j = 0; j < dips.size() && j < 12; j++) {
-    const double a = (2 * M_PI * (dips[j] - dips[0])) / nominal;
+    const double a = (2 * kPi * (dips[j] - dips[0])) / nominal;
     c += cos(a);
     s += sin(a);
   }
-  double phase = dips[0] + (atan2(s, c) / (2 * M_PI)) * nominal;
+  double phase = dips[0] + (atan2(s, c) / (2 * kPi)) * nominal;
   std::vector<std::pair<long, double>> points;
   for (double d : dips) {
     const long k = (long)jsRound((d - phase) / period);

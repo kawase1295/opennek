@@ -17,7 +17,7 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
 
 | Part | Contents |
 |---|---|
-| `host/` | Host server, a single Rust executable (axum, SQLite). Sigfox decoder, web UI (`host/ui`, embedded), callbacks, downlinks |
+| `host/` | Host server, a single Rust executable (axum, SQLite). Sigfox decoder, web UI (`host/ui`, embedded), callbacks, downlinks; the desktop app (`host/crates/opennek-desktop`, Tauri) shows the same UI in a window |
 | `tools/lsm/` | Node tools for the LSM100A receiver: flashing its firmware through the bridge, RSSI/CFO captures |
 | `firmware/` | PlatformIO (Arduino) firmware. `radio-xiao-sx1262` = the radio: streams RSSI from the Wio-SX1262 to the host and sends downlinks |
 | `docs/protocol.md` | Callback and downlink specification |
@@ -31,11 +31,28 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    ```bash
    cd firmware && pio run -e radio-xiao-sx1262 -t upload
    ```
-3. Download the host for your OS from [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest).
-   It is a single executable with nothing else to install:
-   `opennek-<version>-linux-x64`, `opennek-<version>-windows-x64.exe`, `opennek-<version>-macos-arm64` (Apple silicon)
-   or `opennek-<version>-macos-x64` (Intel Mac). `SHA256SUMS` lists their checksums.
-4. Start it with the kit's serial port:
+3. Download OpenNEK from [GitHub Releases](https://github.com/kawase1295/opennek/releases/latest).
+   On **Linux and Windows, the desktop app** is the simplest: it shows the web UI in its own window, with no terminal
+   and no browser.
+   - **Linux** (Ubuntu 24.04 or later, or a distro as recent): `opennek-desktop-<version>-linux-x64.deb`.
+     ```bash
+     sudo apt install ./opennek-desktop-*-linux-x64.deb
+     ```
+     OpenNEK is then in the app menu. The package also lets the logged-in user open the XIAO kit's serial port
+     (a udev rule), so there is no group to join and no new login. `sudo apt remove io-github-kawase1295-opennek`
+     removes it; the data stays. Older distros use the executable below.
+   - **Windows**: `opennek-desktop-<version>-windows-x64-setup.exe`. It installs for your user only, without
+     administrator rights, and adds OpenNEK to the Start menu. It needs WebView2, which Windows 10 and 11 normally
+     have; when it is missing the installer downloads it, so it needs internet access then.
+
+   The app listens on <http://127.0.0.1:8085/> (another free port if other software has 8085; the **Log** tab says
+   which) and only on this PC. Closing its window stops OpenNEK.
+
+   **The executable** is for macOS, older Linux distros, running without a desktop, and options such as `--sigfox` or
+   `--host` (access from the LAN): `opennek-<version>-linux-x64`, `opennek-<version>-windows-x64.exe`,
+   `opennek-<version>-macos-arm64` (Apple silicon) or `opennek-<version>-macos-x64` (Intel Mac), a single file with
+   nothing else to install. `SHA256SUMS` lists the checksums of all downloads.
+4. Start the executable with the kit's serial port (the app needs no step here: pick the port in the web UI):
    ```bash
    chmod +x opennek-*-linux-x64 && ./opennek-*-linux-x64 --sigfox /dev/ttyACM0     # Linux
    chmod +x opennek-*-macos-* && ./opennek-*-macos-arm64 --sigfox /dev/cu.usbmodem1101   # macOS
@@ -48,11 +65,12 @@ Develop and test Sigfox applications on your desk, without a backend subscriptio
    **Open in Terminal**). Double-clicking it in the file manager does not start it: on Linux, Files says "There is no
    app installed for executable files".
 
-   On Linux, run `./opennek-*-linux-x64 install` once to add OpenNEK to the app menu; from then on, start it with a
-   click there (a terminal window shows its log, and closing it stops OpenNEK). `opennek uninstall` takes it out again.
+   On Linux, run `./opennek-*-linux-x64 install` once to add it to the app menu as **OpenNEK (Terminal)**; from then on,
+   start it with a click there (a terminal window shows its log, and closing it stops OpenNEK). `opennek uninstall`
+   takes it out again.
 
-   The binaries are not signed. On Windows, SmartScreen may say "Windows protected your PC": choose
-   **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
+   The downloads are not signed. On Windows, SmartScreen may say "Windows protected your PC" for the installer or the
+   `.exe`: choose **More info → Run anyway**. On macOS, Gatekeeper blocks the downloaded file: run
    `xattr -d com.apple.quarantine opennek-*-macos-*` once, or right-click it in Finder and choose **Open**.
 
 Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>` to change it). The port is remembered; you can also pick it under
@@ -60,8 +78,11 @@ Open <http://127.0.0.1:8085/>. The kit listens on 923.2 MHz (`--sigfox-freq <hz>
 in the message list. The web UI is in English; a Japanese translation can be selected in the top right.
 
 On Linux, if you get a permission error on the serial port, run `sudo usermod -aG dialout $USER` and log in again.
+This applies to the app too when the receiver is not the XIAO kit its udev rule is for.
 
 Data is stored in `~/.local/share/opennek/` (Windows: `%APPDATA%\opennek\`, macOS: `~/Library/Application Support/opennek/`).
+Only one OpenNEK runs per data dir, since it holds the database and the receiver's serial port; the app and the
+executable share it. A second one says where the first one is running and exits. Another `--data <dir>` is a separate instance.
 
 ### Uplink authentication
 
@@ -147,17 +168,33 @@ cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
 The web UI in `host/ui` is plain JS without a build step and is embedded in the executable.
+
+The desktop app (`host/crates/opennek-desktop`, [Tauri](https://tauri.app/)) shows the same web UI in its own window.
+Plain `cargo` commands leave it out, so the `opennek` executable stays a static binary; build it by name:
+
+```bash
+cd host
+cargo run -p opennek-desktop
+```
+
+On Linux it needs the WebKitGTK development files
+(`sudo apt-get install pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev` on Ubuntu / Debian);
+Windows has WebView2 already. The app listens on 127.0.0.1:8085, or on a free port when other software has 8085.
 The LSM100A tools in `tools/lsm` run on Node (`cd tools/lsm && npm install`); only firmware work needs them.
 
 Pushing a version tag (`v0.2.0`, equal to the version in `host/Cargo.toml`) on main builds the executables and
-publishes them on GitHub Releases (`.github/workflows/release.yml`).
+the desktop app's installers and publishes them on GitHub Releases (`.github/workflows/release.yml`). To build an
+installer locally, run `npx @tauri-apps/cli@2.12.4 build --bundles deb` (or `nsis` on Windows) in
+`host/crates/opennek-desktop`.
 
 ```bash
-scripts/check     # what CI runs: format, lint and test the host, test the UI strings and the LSM100A tools
+scripts/check     # what CI runs: format, lint and test the host and the desktop app, test the UI strings, the LSM100A tools and the firmware natively
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
   sigfox_native_test.cpp ../lib/SigfoxRx/src/*.cpp -o sigfox_test && ./sigfox_test ../../fixtures)
+(cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/RadioStreamer/src \
+  streamer_native_test.cpp ../lib/RadioStreamer/src/*.cpp -o streamer_test && ./streamer_test)
 ```
 
 The host tests decode recorded captures of real Sigfox devices end to end (uplink → callback → downlink) through

@@ -1,0 +1,24 @@
+[package]
+name = "opennek-cli"
+description = "Local network for real Sigfox devices: decode their uplinks from a USB receiver, run Sigfox-compatible callbacks and send downlinks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "opennek"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+clap = { version = "4.6.7", features = ["derive"] }
+opennek-core = { path = "../opennek-core" }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

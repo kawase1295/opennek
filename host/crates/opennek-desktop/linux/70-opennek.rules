@@ -1,0 +1,3 @@
+# Installed by the OpenNEK desktop app's .deb: the user logged in at the seat may open the radio
+# (XIAO ESP32S3, USB-Serial/JTAG) without joining dialout. uaccess is applied by 73-seat-late.rules.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", TAG+="uaccess"

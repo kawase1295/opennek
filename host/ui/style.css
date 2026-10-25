@@ -38,6 +38,8 @@ body {
   color: var(--text);
   font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', 'Noto Sans JP', sans-serif;
 }
+/* app.js が設定から言語を読んで訳すまで英語の原文を見せない */
+.booting body { visibility: hidden; }
 code, .mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace; font-size: 12.5px; }
 code { background: var(--code); padding: 1px 4px; border-radius: 4px; }
 
@@ -139,6 +141,11 @@ dialog h3 { margin-top: 0; }
 .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; word-break: break-all; }
+/* the newest line at the bottom, as in a terminal */
+.host-log { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; height: calc(100vh - 120px); min-height: 200px; overflow-y: auto; }
+.host-log:empty { display: none; }
+.host-log div { white-space: pre-wrap; word-break: break-all; }
+.host-log time { color: var(--muted); margin-right: 10px; }
 pre { background: var(--code); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 4px 0 10px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 
 

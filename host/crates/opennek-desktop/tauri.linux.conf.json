@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "io.github.kawase1295.opennek",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": [
+          "libc6 (>= 2.39)",
+          "libwebkit2gtk-4.1-0 (>= 2.44)",
+          "libgtk-3-0 (>= 3.24.41)"
+        ],
+        "desktopTemplate": "linux/opennek.desktop",
+        "files": {
+          "/usr/lib/udev/rules.d/70-opennek.rules": "linux/70-opennek.rules"
+        },
+        "postInstallScript": "linux/postinst.sh",
+        "postRemoveScript": "linux/postrm.sh"
+      }
+    }
+  }
+}
