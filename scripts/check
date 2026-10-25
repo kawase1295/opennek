@@ -12,7 +12,7 @@ cargo test --locked
 cargo clippy --package opennek-desktop --all-targets --locked -- -D warnings
 cargo test --package opennek-desktop --locked
 # The web UI is plain JS embedded in the host
-node --test ui/i18n.test.mjs
+node --test ui/*.test.mjs
 
 # The LSM100A tools (Node)
 cd "$root/tools/lsm"
