@@ -1,4 +1,4 @@
-// UI の表示言語。既定は英語で、日本語は localStorage に覚える
+// UI の表示言語。設定 (GET /api/settings の language) に保存し、既定は英語
 // en: app.js が組み立てる文字列だけ (静的な文字列の英語は index.html に直接書いてある)
 // ja: index.html の data-i18n* キーと en のキーのすべて
 const en = {
@@ -195,20 +195,31 @@ const ja = {
 export const STRINGS = { en, ja }
 export const LANGUAGES = { en: 'English', ja: '日本語' }
 
-const KEY = 'opennek.lang'
-const stored = () => {
+// 起動時に app.js が設定から決めるまでは英語
+export let lang = 'en'
+
+export function setLang(next) {
+  lang = Object.hasOwn(STRINGS, next ?? '') ? next : 'en'
+}
+
+// 設定の言語と、旧版が localStorage に覚えた言語 (legacy) から表示言語を決める
+// 設定が既定のままで legacy があれば、それを設定へ移す (migrate)
+export function chooseLang(saved, legacy) {
+  const known = (code) => Object.hasOwn(STRINGS, code ?? '')
+  if (saved === 'en' && legacy !== 'en' && known(legacy)) return { lang: legacy, migrate: true }
+  return { lang: known(saved) ? saved : 'en', migrate: false }
+}
+
+// 旧版の localStorage の言語を取り出して消す。ポートが変わると読めなくなるので設定へ移した
+const LEGACY_KEY = 'opennek.lang'
+export function takeLegacyLang() {
   try {
-    return localStorage.getItem(KEY)
+    const v = localStorage.getItem(LEGACY_KEY)
+    localStorage.removeItem(LEGACY_KEY)
+    return v
   } catch {
     return null
   }
-}
-export const lang = Object.hasOwn(STRINGS, stored() ?? '') ? stored() : 'en'
-
-export function setLang(next) {
-  try {
-    localStorage.setItem(KEY, next)
-  } catch {}
 }
 
 // {name} を vars で置換する。vars が無ければそのまま (ヒント文の {time} などを残すため)
