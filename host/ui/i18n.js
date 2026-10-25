@@ -54,6 +54,7 @@ const en = {
   'cb.allDevices': 'all',
   'cb.test': 'Send test',
   'cb.confirmDelete': 'Delete this callback?',
+  'cb.confirmTest': 'Send a test request to {method} {url}? The server receives it like a real uplink.',
   'cb.testOk': 'OK: HTTP {status} ({ms} ms)',
   'cb.testFailed': 'Failed: {error}',
   'set.notUsed': "Don't use",
@@ -187,6 +188,7 @@ const ja = {
   'cb.allDevices': 'すべて',
   'cb.test': 'テスト送信',
   'cb.confirmDelete': 'このコールバックを削除しますか?',
+  'cb.confirmTest': '{method} {url} にテストのリクエストを送りますか? 送信先には本物のアップリンクと同じように届きます。',
   'cb.testOk': '成功: HTTP {status} ({ms} ms)',
   'cb.testFailed': '失敗: {error}',
   'set.notUsed': '使わない',
@@ -202,12 +204,15 @@ export function setLang(next) {
   lang = Object.hasOwn(STRINGS, next ?? '') ? next : 'en'
 }
 
-// 設定の言語と、旧版が localStorage に覚えた言語 (legacy) から表示言語を決める
-// 設定が既定のままで legacy があれば、それを設定へ移す (migrate)
-export function chooseLang(saved, legacy) {
+// 設定の言語、旧版が localStorage に覚えた言語 (legacy)、ブラウザの言語 (navigator.languages) から表示言語を決める
+// 設定で選ばれていなければ (null) ブラウザの言語に従う。legacy があればそれを設定へ移す (migrate)
+// 言語を未選択にできる前の版は既定の "en" を保存していたので、"en" でも legacy を優先する
+export function chooseLang(saved, legacy, browser) {
   const known = (code) => Object.hasOwn(STRINGS, code ?? '')
-  if (saved === 'en' && legacy !== 'en' && known(legacy)) return { lang: legacy, migrate: true }
-  return { lang: known(saved) ? saved : 'en', migrate: false }
+  if ((saved === 'en' || !known(saved)) && legacy !== 'en' && known(legacy)) return { lang: legacy, migrate: true }
+  if (known(saved)) return { lang: saved, migrate: false }
+  const fromBrowser = browser.map((tag) => tag.split('-')[0].toLowerCase()).find(known)
+  return { lang: fromBrowser ?? 'en', migrate: false }
 }
 
 // 旧版の localStorage の言語を取り出して消す。ポートが変わると読めなくなるので設定へ移した

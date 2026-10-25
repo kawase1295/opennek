@@ -78,8 +78,9 @@ h4 { margin: 16px 0 6px; font-size: 13.5px; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
 .cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
-.cards .card { margin: 0; display: flex; flex-direction: column; gap: 6px; }
-.cards .card .url { word-break: break-all; }
+.cards .card { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* 変数名の途中で折れないよう 1 行にして末尾を省く。全体は title で見せる */
+.cards .card .url { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cards .card .actions { margin-top: auto; }
 
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }

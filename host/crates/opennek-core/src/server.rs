@@ -26,6 +26,7 @@ use crate::store::{CallbackInput, DeviceInput, MessageQuery};
 const INDEX_HTML: &str = include_str!("../../../ui/index.html");
 const APP_JS: &str = include_str!("../../../ui/app.js");
 const I18N_JS: &str = include_str!("../../../ui/i18n.js");
+const BADGES_JS: &str = include_str!("../../../ui/badges.js");
 const STYLE_CSS: &str = include_str!("../../../ui/style.css");
 
 const JS: &str = "text/javascript; charset=utf-8";
@@ -75,6 +76,10 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/", get(|| async { Html(INDEX_HTML) }))
         .route("/app.js", get(|| async { ([(header::CONTENT_TYPE, JS)], APP_JS) }))
         .route("/i18n.js", get(|| async { ([(header::CONTENT_TYPE, JS)], I18N_JS) }))
+        .route(
+            "/badges.js",
+            get(|| async { ([(header::CONTENT_TYPE, JS)], BADGES_JS) }),
+        )
         .route(
             "/style.css",
             get(|| async { ([(header::CONTENT_TYPE, "text/css; charset=utf-8")], STYLE_CSS) }),
