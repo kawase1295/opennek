@@ -46,6 +46,16 @@ impl Default for Options {
     }
 }
 
+impl Options {
+    /// The data dir the host uses: the given one, else the OS default
+    pub fn resolved_data_dir(&self) -> PathBuf {
+        self.data_dir.clone().unwrap_or_else(|| {
+            let home = std::env::home_dir().unwrap_or_default();
+            default_data_dir(Os::current(), |k| std::env::var(k).ok(), &home.to_string_lossy())
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum StartError {
     /// Another host runs on the data dir; its URL if it has written it
@@ -123,10 +133,7 @@ pub async fn start(options: Options) -> Result<Running, StartError> {
 
 /// Starts the host with the radio opening its port through `opener`
 pub async fn start_with(options: Options, opener: Box<dyn Opener>) -> Result<Running, StartError> {
-    let dir = options.data_dir.clone().unwrap_or_else(|| {
-        let home = std::env::home_dir().unwrap_or_default();
-        default_data_dir(Os::current(), |k| std::env::var(k).ok(), &home.to_string_lossy())
-    });
+    let dir = options.resolved_data_dir();
     let data_dir_error = |error: String| StartError::DataDir {
         dir: dir.clone(),
         error,

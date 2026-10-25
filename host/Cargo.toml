@@ -1,6 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# The desktop app links webkit2gtk / WebView2, so plain cargo commands leave it out and the `opennek` executable
+# stays a static musl binary; build it with `-p opennek-desktop`
+default-members = ["crates/sigfox", "crates/opennek-core", "crates/opennek-cli"]
 
 [workspace.package]
 version = "0.1.1"

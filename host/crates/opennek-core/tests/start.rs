@@ -43,6 +43,22 @@ fn the_defaults_are_the_cli_defaults() {
     );
 }
 
+#[test]
+fn the_data_dir_is_the_given_one_or_the_os_default() {
+    let given = Options {
+        data_dir: Some("/data/opennek".into()),
+        ..Options::default()
+    };
+    assert_eq!(given.resolved_data_dir(), std::path::Path::new("/data/opennek"));
+    let home = std::env::home_dir().unwrap_or_default();
+    let default = opennek_core::platform::default_data_dir(
+        opennek_core::platform::Os::current(),
+        |k| std::env::var(k).ok(),
+        &home.to_string_lossy(),
+    );
+    assert_eq!(Options::default().resolved_data_dir(), default);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn starts_on_the_port_it_was_given_and_stops_the_radio_on_shutdown() {
     let data = tempfile::tempdir().unwrap();

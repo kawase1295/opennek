@@ -146,13 +146,25 @@ cargo run --release -- --sigfox /dev/ttyACM0
 ```
 
 `host/ui` の Web UI はビルド不要の素の JS で、実行ファイルに埋め込まれます。
+
+デスクトップアプリ（`host/crates/opennek-desktop`、[Tauri](https://tauri.app/)）は同じ Web UI を専用のウィンドウで表示します。
+`opennek` 実行ファイルを静的バイナリのまま保つため、素の `cargo` コマンドの対象からは外してあります。名前を指定してビルドします:
+
+```bash
+cd host
+cargo run -p opennek-desktop
+```
+
+Linux では WebKitGTK の開発用パッケージが必要です
+（Ubuntu / Debian では `sudo apt-get install pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev`）。
+Windows には WebView2 が入っています。アプリは 127.0.0.1:8085 で待ち受け、8085 を他のソフトが使っていれば空いているポートを使います。
 `tools/lsm` の LSM100A 用ツールは Node で動きます（`cd tools/lsm && npm install`）。必要なのはファームを扱うときだけです。
 
 main 上でバージョンタグ（`v0.2.0`。`host/Cargo.toml` のバージョンと一致させる）を push すると、
 実行ファイルがビルドされて GitHub Releases に公開されます（`.github/workflows/release.yml`）。
 
 ```bash
-scripts/check     # CI と同じ検査: ホストのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
+scripts/check     # CI と同じ検査: ホストとデスクトップアプリのフォーマット・lint・テスト、UI の文言、LSM100A ツール、ファームのネイティブテスト
 (cd host && cargo test)
 (cd firmware && pio run)
 (cd firmware/test && uvx --from ziglang python -m ziglang c++ -std=c++17 -O2 -I ../lib/SigfoxRx/src \
