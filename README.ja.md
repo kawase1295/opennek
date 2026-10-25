@@ -61,6 +61,8 @@ UI は英語で表示されます。右上の言語メニューで「日本語�
 Linux でシリアルポートの権限エラーが出たら、`sudo usermod -aG dialout $USER` を実行してログインし直してください。
 
 データは `~/.local/share/opennek/` に保存されます（Windows は `%APPDATA%\opennek\`、macOS は `~/Library/Application Support/opennek/`）。
+データベースと受信機のシリアルポートを占有するため、OpenNEK はデータディレクトリごとに 1 つしか動きません。
+2 つ目の `opennek` は動作中の URL を表示して終了します。`--data <dir>` で別のディレクトリを指定すれば別のインスタンスになります。
 
 ### アップリンクの認証
 
