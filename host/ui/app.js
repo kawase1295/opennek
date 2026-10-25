@@ -37,6 +37,7 @@ function showTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.id === `tab-${name}`))
   if (location.hash !== `#${name}`) history.replaceState(null, '', `#${name}`)
   if (name === 'callbacks') loadLogs()
+  if (name === 'log') followHostLog()
   if (name === 'settings') loadSettings()
 }
 $$('nav button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)))
@@ -176,6 +177,54 @@ function logBlock(l) {
     ${l.ok ? '<span class="badge ok">' : '<span class="badge bad">'}${esc(l.status ?? l.error)}</span>
     <span class="muted">${l.durationMs} ms</span>${l.error && l.status ? ` <span class="muted">${esc(l.error)}</span>` : ''}
     ${l.response ? `<pre>${esc(l.response)}</pre>` : ''}</div>`
+}
+
+// ---------------- host log
+const hostLog = $('#host-log')
+// the host keeps as many
+const HOST_LOG_LINES = 1000
+// at the bottom unless the user scrolled up
+let hostLogFollows = true
+// console events that came while the log was loading
+let hostLogQueue = null
+const logKey = (l) => `${l.time} ${l.line}`
+const fmtLogTime = (ms) => new Date(ms).toLocaleTimeString()
+
+function followHostLog() {
+  if (hostLogFollows) hostLog.scrollTop = hostLog.scrollHeight
+}
+// a hidden log does not scroll, so this is noted only while it is shown
+hostLog.addEventListener('scroll', () => {
+  hostLogFollows = hostLog.scrollHeight - hostLog.scrollTop - hostLog.clientHeight < 4
+})
+
+function appendHostLog(lines) {
+  for (const l of lines) {
+    const div = document.createElement('div')
+    div.innerHTML = `<time title="${esc(fmtTime(l.time))}">${esc(fmtLogTime(l.time))}</time>${esc(l.line)}`
+    hostLog.append(div)
+  }
+  while (hostLog.children.length > HOST_LOG_LINES) hostLog.firstElementChild.remove()
+  $('#host-log-empty').classList.toggle('hidden', hostLog.children.length > 0)
+  followHostLog()
+}
+
+function onConsole(l) {
+  if (hostLogQueue) hostLogQueue.push(l)
+  else appendHostLog([l])
+}
+
+// On every (re)connect of the events: the lines the host kept, then those that came meanwhile
+async function loadHostLog() {
+  hostLogQueue = []
+  const lines = await api('/logs').catch(() => null)
+  const queued = hostLogQueue
+  hostLogQueue = null
+  // the host is gone again: keep what is shown
+  if (!lines) return appendHostLog(queued)
+  const kept = new Set(lines.map(logKey))
+  hostLog.innerHTML = ''
+  appendHostLog([...lines, ...queued.filter((l) => !kept.has(logKey(l)))])
 }
 
 // ---------------- devices
@@ -410,7 +459,9 @@ $('#settings-form').addEventListener('submit', async (e) => {
 // ---------------- live events
 function connectEvents() {
   const es = new EventSource('/api/events')
+  es.addEventListener('open', loadHostLog)
   es.addEventListener('radio', (e) => renderRadio(JSON.parse(e.data).status))
+  es.addEventListener('console', (e) => onConsole(JSON.parse(e.data)))
   es.addEventListener('message', (e) => {
     const { message } = JSON.parse(e.data)
     if (!state.devices.some((d) => d.id === message.deviceId)) loadDevices()
@@ -443,5 +494,5 @@ translatePage()
   await loadMessages()
   connectEvents()
   const tab = location.hash.slice(1)
-  showTab(['messages', 'devices', 'callbacks', 'settings'].includes(tab) ? tab : 'messages')
+  showTab(['messages', 'devices', 'callbacks', 'log', 'settings'].includes(tab) ? tab : 'messages')
 })()

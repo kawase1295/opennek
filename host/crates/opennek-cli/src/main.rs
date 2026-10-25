@@ -14,31 +14,14 @@ fn ts() -> String {
     chrono::Local::now().format("%H:%M:%S").to_string()
 }
 
-// One line per event on the console; radio status lines only when they change (not for every frame counted)
+// One line per event on the console; the engine logs the receiver's state as a console line when it changes
 fn print_events(mut events: broadcast::Receiver<Event>) {
     tokio::spawn(async move {
-        let mut last_radio = String::new();
         while let Ok(e) = events.recv().await {
             match e {
                 Event::Console { line, .. } => println!("[{}] {line}", ts()),
-                // the UI shows callback logs; the console does not
-                Event::CallbackLog { .. } => {}
-                Event::Radio { status: s } => {
-                    let line = format!(
-                        "sigfox: {}{}{}{}{}",
-                        json!(s.state).as_str().unwrap_or_default(),
-                        s.port.as_ref().map(|p| format!(" {p}")).unwrap_or_default(),
-                        s.fw.as_ref().map(|f| format!(" fw={f}")).unwrap_or_default(),
-                        s.freq
-                            .map(|f| format!(" {:.3} MHz", f64::from(f) / 1e6))
-                            .unwrap_or_default(),
-                        s.error.as_ref().map(|e| format!(" ({e})")).unwrap_or_default(),
-                    );
-                    if line != last_radio {
-                        println!("[{}] {line}", ts());
-                    }
-                    last_radio = line;
-                }
+                // the UI shows callback logs and the receiver's status; the console does not
+                Event::CallbackLog { .. } | Event::Radio { .. } => {}
                 // a message is reported when received and again when its downlink is settled
                 Event::Message { message } => {
                     let m = &message.fields;
