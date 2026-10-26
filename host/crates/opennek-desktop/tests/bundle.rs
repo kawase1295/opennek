@@ -90,6 +90,12 @@ fn the_deb_lets_the_logged_in_user_open_the_radio() {
             .any(|l| l == r#"SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", TAG+="uaccess""#),
         "{rule}"
     );
+    // RTL-SDR dongles (RTL2838 / RTL2832U), opened over USB rather than as a serial port
+    for pid in ["2838", "2832"] {
+        let line =
+            format!(r#"SUBSYSTEM=="usb", ATTRS{{idVendor}}=="0bda", ATTRS{{idProduct}}=="{pid}", TAG+="uaccess""#);
+        assert!(rule.lines().any(|l| l == line), "{rule}");
+    }
     // reloaded on install and on removal, so it applies without a new login
     for script in ["postInstallScript", "postRemoveScript"] {
         let s = read(&deb[script]);

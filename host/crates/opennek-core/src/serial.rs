@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::platform::Os;
 use crate::radio::{LinePort, Opener};
+use crate::rtlsdr::is_rtlsdr;
 use crate::store::ReceiverPort;
 
 const BAUD: u32 = 115_200;
@@ -144,14 +145,22 @@ fn is_kit(p: &ListedPort) -> bool {
     p.usb.as_ref().is_some_and(UsbInfo::is_kit)
 }
 
-/// The port to take as the receiver's while none was ever set: the XIAO kit, when it is the only one present.
-/// Which of several kits is the user's to say
+/// The port to take as the receiver's while none was ever set: the XIAO kit, when it is the only one present,
+/// else the one RTL-SDR if no kit is (it only receives). Which of several is the user's to say
 pub fn auto_port(ports: &[PortInfo], setting: &ReceiverPort) -> Option<String> {
     if *setting != ReceiverPort::Unset {
         return None;
     }
-    match ports.iter().filter(|p| p.kit).collect::<Vec<_>>().as_slice() {
-        [kit] => Some(kit.path.clone()),
+    if ports.iter().any(|p| p.kit) {
+        the_one(ports, |p| p.kit)
+    } else {
+        the_one(ports, |p| is_rtlsdr(&p.path))
+    }
+}
+
+fn the_one(ports: &[PortInfo], pick: impl Fn(&PortInfo) -> bool) -> Option<String> {
+    match ports.iter().filter(|p| pick(p)).collect::<Vec<_>>().as_slice() {
+        [p] => Some(p.path.clone()),
         _ => None,
     }
 }

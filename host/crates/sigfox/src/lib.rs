@@ -4,6 +4,7 @@
 pub mod auth;
 pub mod demod;
 pub mod downlink;
+pub mod envelope;
 pub mod frame;
 pub mod frequency;
 

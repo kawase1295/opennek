@@ -16,8 +16,8 @@ pub struct Args {
     /// Address to listen on
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
-    /// Port of the RSSI streamer that receives real Sigfox (RC3); off to disable [default: the saved setting, else the
-    /// XIAO kit when one is plugged in]
+    /// Port of the RSSI streamer that receives real Sigfox (RC3), or rtlsdr:<index> for an RTL-SDR; off to disable
+    /// [default: the saved setting, else the XIAO kit when one is plugged in, else an RTL-SDR]
     #[arg(long, value_name = "PATH")]
     pub sigfox: Option<String>,
     /// Sigfox receive frequency in Hz [default: 923200000]

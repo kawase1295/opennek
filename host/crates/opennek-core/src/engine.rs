@@ -16,6 +16,7 @@ use crate::console::{CONSOLE_LINES, ConsoleBuffer, ConsoleLine, radio_line};
 use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
 use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitter, now_ms};
+use crate::rtlsdr::is_rtlsdr;
 use crate::store::{
     Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage,
     ReceiverPort, Store,
@@ -166,6 +167,7 @@ impl Engine {
             self.store.save_settings(&s).map(|()| true)
         });
         match saved {
+            Ok(true) if is_rtlsdr(&port) => self.console(format!("sigfox: found an RTL-SDR on {port}")),
             Ok(true) => self.console(format!("sigfox: found the XIAO kit on {port}")),
             Ok(false) => {}
             Err(e) => self.console(format!("error: {e}")),

@@ -81,6 +81,22 @@ Linux でシリアルポートの権限エラーが出たら、`sudo usermod -aG
 データベースと受信機のシリアルポートを占有するため、OpenNEK はデータディレクトリごとに 1 つしか動きません（アプリと実行ファイルで共通）。
 2 つ目は動作中の URL を表示して終了します。`--data <dir>` で別のディレクトリを指定すれば別のインスタンスになります。
 
+### RTL-SDR で受信する（受信専用）
+
+XIAO キットの代わりに RTL-SDR（RTL-SDR Blog V3 で確認）でもアップリンクを受信できます。ダウンリンクは送れません。
+
+- **設定 → Sigfox 受信機 (RC3)** で `RTL-SDR … (rtlsdr:0)` を選ぶか、`--sigfox rtlsdr:0` で起動します。XIAO キットが接続されていなければ、
+  1 台だけ接続された RTL-SDR が自動で選ばれます（**ログ** タブに `sigfox: found an RTL-SDR on rtlsdr:0` と出ます）。
+- 上りの帯域（923.2 MHz ± 100 kHz）全体を一度に受信するので、フレームごとに周波数が変わる 3 回の繰り返しをすべて受け取れます。
+  ゲインは 29.7 dB 固定で、RSSI は較正していないおおよその値です。
+- Linux では DVB-T 用のドライバ（dvb_usb_rtl28xxu）から自動で切り離します。権限エラーが出たら、次の udev ルールを置いて
+  `sudo udevadm control --reload-rules && sudo udevadm trigger` を実行し、ドングルを挿し直してください（デスクトップアプリの .deb には含まれています）。
+  ```
+  # /etc/udev/rules.d/70-rtl-sdr.rules
+  SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", TAG+="uaccess"
+  ```
+- Windows では [Zadig](https://zadig.akeo.ie/) で RTL-SDR に WinUSB ドライバを入れてください。
+
 ### アップリンクの認証
 
 アップリンクは、デバイスが署名に使った鍵でしか検証できません。Sigfox が書き込んだ秘密鍵は通常モジュールから読み出せないので、
