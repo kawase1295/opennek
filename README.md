@@ -87,6 +87,22 @@ Data is stored in `~/.local/share/opennek/` (Windows: `%APPDATA%\opennek\`, macO
 Only one OpenNEK runs per data dir, since it holds the database and the receiver's serial port; the app and the
 executable share it. A second one says where the first one is running and exits. Another `--data <dir>` is a separate instance.
 
+### Receiving with an RTL-SDR (receive only)
+
+An RTL-SDR (tested with the RTL-SDR Blog V3) can receive uplinks instead of the XIAO kit. It cannot send downlinks.
+
+- Pick `RTL-SDR … (rtlsdr:0)` in **Settings → Sigfox receiver (RC3)**, or start with `--sigfox rtlsdr:0`. Without a XIAO kit
+  plugged in, a single RTL-SDR is picked by itself (the **Log** tab shows `sigfox: found an RTL-SDR on rtlsdr:0`).
+- It receives the whole uplink band (923.2 MHz ± 100 kHz) at once, so it gets all three repetitions although each frame is on
+  another frequency. The gain is fixed at 29.7 dB, and the RSSI is approximate (not calibrated).
+- On Linux it takes the dongle from the DVB-T driver (dvb_usb_rtl28xxu) by itself. On a permission error, add this udev rule,
+  run `sudo udevadm control --reload-rules && sudo udevadm trigger` and plug the dongle in again (the desktop app's .deb has it).
+  ```
+  # /etc/udev/rules.d/70-rtl-sdr.rules
+  SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", TAG+="uaccess"
+  ```
+- On Windows, install the WinUSB driver for the RTL-SDR with [Zadig](https://zadig.akeo.ie/).
+
 ### Uplink authentication
 
 An uplink can only be verified with the key the device signed it with. Sigfox-provisioned private keys

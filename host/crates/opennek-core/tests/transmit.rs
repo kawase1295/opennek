@@ -165,6 +165,18 @@ fn an_older_streamer_is_not_asked_to_transmit() {
 }
 
 #[test]
+fn an_rtl_sdr_is_not_asked_to_transmit() {
+    let s = setup("rtl-sdr", false, vec![], |_| Some("off".into()));
+    assert!(!s.radio.transmit(&downlink(5000)));
+    assert!(!s.commands().iter().any(|c| c.starts_with('T') || c.starts_with('E')));
+    assert_eq!(
+        s.logs().last().unwrap(),
+        "sigfox: TX not sent: an RTL-SDR only receives"
+    );
+    s.radio.stop();
+}
+
+#[test]
 fn without_a_receiver_nothing_is_sent() {
     let radio = Radio::new(
         Box::new(|| RadioSettings {

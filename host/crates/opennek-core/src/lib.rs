@@ -12,6 +12,8 @@ pub mod logfile;
 pub mod payload;
 pub mod platform;
 pub mod radio;
+pub mod receivers;
+pub mod rtlsdr;
 pub mod serial;
 pub mod server;
 pub mod start;
