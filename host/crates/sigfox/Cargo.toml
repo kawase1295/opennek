@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 aes = "0.8"
+rustfft = "6.4.1"
 
 [dev-dependencies]
 base64 = "0.22"

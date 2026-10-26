@@ -45,6 +45,19 @@ fn the_one_kit_present_is_picked_saved_and_opened() {
 }
 
 #[test]
+fn an_rtl_sdr_without_a_kit_is_picked_and_said_so() {
+    let streamer = FakeStreamer::default();
+    *streamer.ports.lock().unwrap() = vec![opennek_core::rtlsdr::port_info(0, "RTL2838UHIDIR", "00000001")];
+    let host = host(ReceiverPort::Unset, &streamer);
+    host.radio.start();
+    eventually("rtlsdr:0 opened", || {
+        (streamer.opened.lock().unwrap().as_slice() == ["rtlsdr:0"]).then_some(())
+    });
+    host.radio.stop();
+    assert!(logs(&host).contains(&"sigfox: found an RTL-SDR on rtlsdr:0".to_string()));
+}
+
+#[test]
 fn a_kit_plugged_in_after_start_is_picked_too() {
     let streamer = FakeStreamer::default();
     let host = host(ReceiverPort::Unset, &streamer);

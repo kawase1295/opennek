@@ -20,6 +20,7 @@ use sigfox::frame::DeviceId;
 use sigfox::frequency::{FrequencyTracker, STREAMER_BIT_RATE, cfo_step_hz};
 use sigfox::receiver::{ReceiverEvent, SigfoxMessage, SigfoxReceiver};
 
+use crate::rtlsdr;
 use crate::serial::{PortInfo, auto_port};
 use crate::store::ReceiverPort;
 
@@ -160,8 +161,8 @@ pub enum RadioEvent {
     Status(RadioStatus),
     Message(RadioMessage),
     Log(String),
-    /// The XIAO kit is on this port while none is set (`serial::auto_port`): to be saved as the port, which the
-    /// radio opens if the settings then say so
+    /// The XIAO kit, or an RTL-SDR, is on this port while none is set (`serial::auto_port`): to be saved as the
+    /// port, which the radio opens if the settings then say so
     Found(String),
 }
 
@@ -330,6 +331,9 @@ impl Transmitter for Radio {
         let Some(commands) = commands.filter(|_| status.state == RadioState::Connected) else {
             return self.tx_failed("receiver not connected");
         };
+        if status.fw.as_deref() == Some(rtlsdr::FW) {
+            return self.tx_failed("an RTL-SDR only receives");
+        }
         if !at_least(status.fw.as_deref(), TX_FW) {
             let fw = status.fw.as_deref().unwrap_or("?");
             return self.tx_failed(&format!("streamer firmware 0.3.0 or later needed (fw={fw})"));

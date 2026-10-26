@@ -16,7 +16,7 @@ use crate::instance::{InstanceLock, LockError};
 use crate::logfile::{LIMIT, LogFile, Logger, log_path};
 use crate::platform::{Os, default_data_dir};
 use crate::radio::{Opener, now_ms};
-use crate::serial::SerialOpener;
+use crate::receivers::ReceiverOpener;
 use crate::store::{ReceiverPort, Store};
 
 /// What a front end decides about the host; the rest comes from the saved settings
@@ -126,9 +126,9 @@ impl Running {
     }
 }
 
-/// Starts the host on the USB receiver given by the settings
+/// Starts the host on the USB receiver given by the settings: a serial streamer or an RTL-SDR
 pub async fn start(options: Options) -> Result<Running, StartError> {
-    start_with(options, Box::new(SerialOpener)).await
+    start_with(options, Box::new(ReceiverOpener)).await
 }
 
 /// Starts the host with the radio opening its port through `opener`

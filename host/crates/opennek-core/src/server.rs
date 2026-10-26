@@ -20,7 +20,7 @@ use crate::callbacks::{CallbackResult, applies_to, dummy_message, run_callback};
 use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::{RadioStatus, now_ms};
-use crate::serial::list_serial_ports;
+use crate::receivers::list_ports;
 use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings};
 
 // The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
@@ -120,7 +120,7 @@ async fn save_settings(State(host): Shared, Json(patch): Json<Value>) -> ApiResu
 }
 
 async fn serial_ports() -> ApiResult {
-    let ports = tokio::task::spawn_blocking(list_serial_ports)
+    let ports = tokio::task::spawn_blocking(list_ports)
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     to_json(ports)
