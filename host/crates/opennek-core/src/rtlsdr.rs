@@ -6,12 +6,14 @@
 //! The dongle is tuned IF_HZ below the receiver frequency, so that the band stays clear of the DC spike at its
 //! centre. Its levels are dBFS, mapped to dBm with a fixed offset that is only roughly right.
 
+use std::fmt::{Display, Write as _};
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use rtl_sdr_rs::error::{RtlsdrError, UsbErrorKind};
 use rtl_sdr_rs::{
     AsyncReadEvent, DEFAULT_ASYNC_BUF_NUMBER, DEFAULT_BUF_LENGTH, DeviceDescriptors, DeviceId, RtlSdr, TunerGain,
 };
@@ -41,6 +43,7 @@ const GAIN_TENTHS_DB: i32 = 297;
 const FULL_SCALE_DBM: f32 = -50.0;
 /// Reads return this often, so that a stop or reconnect is noticed
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
+const STOPPED: &str = "the reader stopped";
 
 pub fn is_rtlsdr(path: &str) -> bool {
     path.starts_with(PREFIX)
@@ -88,15 +91,15 @@ impl VirtualStreamer {
     /// The lines that answer one command line. Settings of the SX126x (W, S, B, P) and C/E have nothing to change
     /// here, and are answered with the status like the streamer does
     pub fn command(&mut self, line: &str) -> Vec<String> {
-        let Some(c) = line.chars().next() else { return vec![] };
-        match c {
-            'T' => return vec!["D off".into()],
-            'F' => {
-                if let Some(f) = line[1..].trim().parse().ok().filter(|f| FREQS.contains(f)) {
+        let mut chars = line.chars();
+        match chars.next() {
+            Some('T') => return vec!["D off".into()],
+            Some('F') => {
+                if let Some(f) = chars.as_str().trim().parse().ok().filter(|f| FREQS.contains(f)) {
                     self.freq = f;
                 }
             }
-            'W' | 'S' | 'B' | 'C' | 'P' | 'E' | '?' => {}
+            Some('W' | 'S' | 'B' | 'C' | 'P' | 'E' | '?') => {}
             _ => return vec![],
         }
         vec![self.status()]
@@ -106,18 +109,38 @@ impl VirtualStreamer {
     pub fn samples(&mut self, dbfs: &[f32]) -> Vec<String> {
         let mut lines = vec![];
         for &v in dbfs {
-            // -2 x dBm, as the streamer sends RSSI
-            let raw = (-2.0 * (v + FULL_SCALE_DBM)).round().clamp(0.0, 255.0) as u8;
-            self.line.push(raw);
+            self.line.push(streamer_rssi(v));
             if self.line.len() == LINE_SAMPLES {
-                let hex: String = self.line.iter().map(|b| format!("{b:02X}")).collect();
-                lines.push(format!("R{:04X}:{hex}", self.seq));
-                self.seq = self.seq.wrapping_add(1);
-                self.line.clear();
+                lines.push(self.take_line());
             }
         }
         lines
     }
+
+    /// The R line of the samples gathered, which the next one starts after
+    fn take_line(&mut self) -> String {
+        let mut line = format!("R{:04X}:", self.seq);
+        for b in self.line.drain(..) {
+            let _ = write!(line, "{b:02X}");
+        }
+        self.seq = self.seq.wrapping_add(1);
+        line
+    }
+}
+
+/// A level in dBFS as the streamer sends RSSI: -2 x dBm, in a byte
+fn streamer_rssi(dbfs: f32) -> u8 {
+    (-2.0 * (dbfs + FULL_SCALE_DBM)).round().clamp(0.0, 255.0) as u8
+}
+
+/// The dongle's samples, unsigned 8-bit I/Q pairs, with full scale at ±1
+fn to_iq(data: &[u8]) -> Vec<Complex32> {
+    let level = |b: u8| (f32::from(b) - 127.5) / 128.0;
+    data.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[i, q]| Complex32::new(level(i), level(q)))
+        .collect()
 }
 
 /// The RTL-SDRs present, as ports
@@ -133,8 +156,11 @@ fn index_of(path: &str) -> io::Result<usize> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("not an RTL-SDR: {path}")))
 }
 
-fn open_error(e: rtl_sdr_rs::error::RtlsdrError) -> io::Error {
-    use rtl_sdr_rs::error::{RtlsdrError, UsbErrorKind};
+fn sdr_error(kind: io::ErrorKind, e: impl Display) -> io::Error {
+    io::Error::new(kind, format!("RTL-SDR: {e}"))
+}
+
+fn open_error(e: RtlsdrError) -> io::Error {
     let kind = match &e {
         RtlsdrError::Usb(u) => Some(u.kind()),
         _ => None,
@@ -147,7 +173,7 @@ fn open_error(e: rtl_sdr_rs::error::RtlsdrError) -> io::Error {
         (_, Os::Windows) => " — install the WinUSB driver for the RTL-SDR with Zadig",
         _ => "",
     };
-    io::Error::other(format!("RTL-SDR: {e}{hint}"))
+    sdr_error(io::ErrorKind::Other, format_args!("{e}{hint}"))
 }
 
 /// Linux binds the DVB-T driver (dvb_usb_rtl28xxu) to the dongle; let go of it as librtlsdr does
@@ -169,7 +195,7 @@ fn detach_dvb_driver(index: usize) {
 #[cfg(not(target_os = "linux"))]
 fn detach_dvb_driver(_index: usize) {}
 
-fn open_sdr(index: usize, freq: u32) -> rtl_sdr_rs::error::Result<RtlSdr> {
+fn open_sdr(index: usize, freq: u32) -> Result<RtlSdr, RtlsdrError> {
     detach_dvb_driver(index);
     let mut sdr = RtlSdr::open(DeviceId::Index(index))?;
     sdr.set_sample_rate(IQ_RATE)?;
@@ -189,14 +215,16 @@ pub fn open(path: &str) -> io::Result<Box<dyn LinePort>> {
     let stopped = stop.clone();
     let thread = std::thread::spawn(move || {
         let streamer = VirtualStreamer::new(RC3_UPLINK_HZ);
-        match open_sdr(index, streamer.freq()) {
-            Ok(sdr) => {
-                let _ = opened_tx.send(Ok(()));
-                stream(sdr, streamer, &commands_rx, &lines_tx, &stopped);
-            }
+        let sdr = match open_sdr(index, streamer.freq()) {
+            Ok(sdr) => sdr,
             Err(e) => {
                 let _ = opened_tx.send(Err(open_error(e)));
+                return;
             }
+        };
+        let _ = opened_tx.send(Ok(()));
+        if let Err(e) = stream(sdr, streamer, &commands_rx, &lines_tx, &stopped) {
+            let _ = lines_tx.send(Err(sdr_error(io::ErrorKind::Other, e)));
         }
     });
     match opened.recv() {
@@ -210,63 +238,54 @@ pub fn open(path: &str) -> io::Result<Box<dyn LinePort>> {
             let _ = thread.join();
             Err(e)
         }
-        Err(_) => Err(io::Error::other("RTL-SDR: the reader stopped")),
+        Err(_) => Err(sdr_error(io::ErrorKind::Other, STOPPED)),
     }
 }
 
-/// Reads IQ until stopped or the dongle fails, which ends the lines with the error. The reader keeps USB
-/// transfers queued while the samples are processed, so that none are lost in between
+/// Reads IQ until stopped or the port is dropped, or until the dongle fails, which is the error. The reader keeps
+/// USB transfers queued while the samples are processed, so that none are lost in between
 fn stream(
     sdr: RtlSdr,
     mut streamer: VirtualStreamer,
     commands: &mpsc::Receiver<String>,
     lines: &mpsc::Sender<io::Result<String>>,
     stop: &AtomicBool,
-) {
-    let failed = |e: String| {
-        let _ = lines.send(Err(io::Error::other(format!("RTL-SDR: {e}"))));
-    };
-    let reader = match sdr.into_async_reader(DEFAULT_ASYNC_BUF_NUMBER, DEFAULT_BUF_LENGTH) {
-        Ok(r) => r,
-        Err(e) => return failed(e.to_string()),
-    };
+) -> Result<(), String> {
+    let reader = sdr
+        .into_async_reader(DEFAULT_ASYNC_BUF_NUMBER, DEFAULT_BUF_LENGTH)
+        .map_err(|e| e.to_string())?;
     let control = reader.control_handle();
     let band = (f64::from(IF_HZ) - HALF_BAND_HZ, f64::from(IF_HZ) + HALF_BAND_HZ);
     let mut envelope = Envelope::new(IQ_RATE, band);
-    let send = |l: String| lines.send(Ok(l)).is_ok();
+    let send = |line: String| lines.send(Ok(line)).is_ok();
     if !send(streamer.status()) {
-        return;
+        return Ok(());
     }
     while !stop.load(Ordering::SeqCst) {
-        while let Ok(command) = commands.try_recv() {
+        for command in commands.try_iter() {
             let freq = streamer.freq();
             for reply in streamer.command(&command) {
                 send(reply);
             }
-            if streamer.freq() != freq
-                && let Err(e) = control.set_center_freq(streamer.freq() - IF_HZ)
-            {
-                return failed(e.to_string());
+            if streamer.freq() != freq {
+                control
+                    .set_center_freq(streamer.freq() - IF_HZ)
+                    .map_err(|e| e.to_string())?;
             }
         }
         let data = match reader.recv() {
             Some(Ok(AsyncReadEvent::Samples { data, .. })) => data,
             Some(Ok(_)) => continue,
-            Some(Err(e)) => return failed(e.to_string()),
-            None => return failed("the stream stopped".into()),
+            Some(Err(e)) => return Err(e.to_string()),
+            None => return Err("the stream stopped".into()),
         };
-        let iq: Vec<Complex32> = data
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|&[i, q]| Complex32::new((f32::from(i) - 127.5) / 128.0, (f32::from(q) - 127.5) / 128.0))
-            .collect();
-        for line in streamer.samples(&envelope.push(&iq)) {
+        for line in streamer.samples(&envelope.push(&to_iq(&data))) {
             if !send(line) {
-                return;
+                return Ok(());
             }
         }
     }
+    Ok(())
 }
 
 struct SdrPort {
@@ -281,17 +300,14 @@ impl LinePort for SdrPort {
         match self.lines.recv_timeout(READ_TIMEOUT) {
             Ok(line) => line.map(Some),
             Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "RTL-SDR: the reader stopped",
-            )),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(sdr_error(io::ErrorKind::UnexpectedEof, STOPPED)),
         }
     }
 
     fn write_line(&mut self, line: &str) -> io::Result<()> {
         self.commands
             .send(line.trim().to_string())
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "RTL-SDR: the reader stopped"))
+            .map_err(|_| sdr_error(io::ErrorKind::BrokenPipe, STOPPED))
     }
 }
 
