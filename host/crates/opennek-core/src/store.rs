@@ -74,7 +74,7 @@ pub enum Theme {
 #[serde(from = "Option<String>", into = "Option<String>")]
 #[cfg_attr(test, derive(ts_rs::TS), ts(as = "Option<String>"))]
 pub enum ReceiverPort {
-    /// The host looks for the XIAO kit (`serial::auto_port`). Older versions saved "" for no receiver too, and
+    /// The host looks for the XIAO kit, or an RTL-SDR (`receivers::auto_port`). Older versions saved "" for no receiver too, and
     /// whenever another setting was saved, so their "" is read as this: it was not a choice
     #[default]
     Unset,

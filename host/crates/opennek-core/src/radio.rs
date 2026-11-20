@@ -20,12 +20,13 @@ use sigfox::frame::DeviceId;
 use sigfox::frequency::{FrequencyTracker, STREAMER_BIT_RATE, cfo_step_hz};
 use sigfox::receiver::{ReceiverEvent, SigfoxMessage, SigfoxReceiver};
 
+use crate::receivers::auto_port;
 use crate::rtlsdr;
-use crate::serial::{PortInfo, auto_port};
+use crate::serial::PortInfo;
 use crate::store::ReceiverPort;
 
 const RETRY: Duration = Duration::from_secs(2);
-/// How often the ports are listed for the XIAO kit while no port is set
+/// How often the ports are listed for a receiver while no port is set
 const LOOK: Duration = Duration::from_secs(2);
 /// No samples for this long means the streamer is gone, or never was there
 const STALL: Duration = Duration::from_secs(3);
@@ -53,7 +54,7 @@ pub trait LinePort: Send {
 
 pub trait Opener: Send + Sync {
     fn open(&self, path: &str) -> io::Result<Box<dyn LinePort>>;
-    /// The ports present, which the XIAO kit is looked for in while no port is set
+    /// The ports present, which a receiver is looked for in while no port is set
     fn ports(&self) -> Vec<PortInfo> {
         vec![]
     }
@@ -161,7 +162,7 @@ pub enum RadioEvent {
     Status(RadioStatus),
     Message(RadioMessage),
     Log(String),
-    /// The XIAO kit, or an RTL-SDR, is on this port while none is set (`serial::auto_port`): to be saved as the
+    /// The XIAO kit, or an RTL-SDR, is on this port while none is set (`receivers::auto_port`): to be saved as the
     /// port, which the radio opens if the settings then say so
     Found(String),
 }
@@ -366,7 +367,7 @@ fn run(shared: &Shared) {
                     s.error = None;
                 });
                 if settings.port == ReceiverPort::Unset {
-                    look_for_kit(shared, generation);
+                    look_for_receiver(shared, generation);
                 } else {
                     shared.wait(generation, Duration::MAX);
                 }
@@ -394,8 +395,8 @@ fn run(shared: &Shared) {
     }
 }
 
-/// Lists the ports until the kit is found and taken as the port, or the settings change
-fn look_for_kit(shared: &Shared, generation: u64) {
+/// Lists the ports until a receiver is found and taken as the port, or the settings change
+fn look_for_receiver(shared: &Shared, generation: u64) {
     while shared.current(generation) {
         let setting = (shared.settings)().port;
         if setting != ReceiverPort::Unset {
