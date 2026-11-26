@@ -244,6 +244,7 @@ impl Engine {
             } else {
                 DownlinkStatus::None
             },
+            simulated: false,
         })?;
         self.emit(Event::Message {
             message: message.clone(),

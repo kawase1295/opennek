@@ -18,6 +18,7 @@ fn uplink(device_id: &str, seq: u16) -> NewMessage {
         decoded: None,
         downlink: None,
         downlink_status: DownlinkStatus::None,
+        simulated: false,
     }
 }
 
@@ -32,7 +33,7 @@ fn messages_are_listed_newest_first_with_the_api_shape() {
         json!({
             "id": 3, "deviceId": "00763DA3", "time": 1_700_000_000_000i64, "seq": 3, "data": "11", "ack": false,
             "oob": false, "rssi": -80, "nbFrames": 3, "auth": "unverified", "station": "0000", "decoded": null,
-            "downlink": null, "downlinkStatus": "none"
+            "downlink": null, "downlinkStatus": "none", "simulated": false
         })
     );
     let seqs = |q: MessageQuery| {
@@ -229,6 +230,8 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
     assert_eq!(messages[0]["deviceId"], "00763DA3");
     assert_eq!(messages[0]["decoded"], json!({ "type": "keepAlive" }));
     assert_eq!(messages[0]["oob"], true);
+    // received: it is from before uplinks could be simulated
+    assert_eq!(messages[0]["simulated"], false);
     assert_eq!(messages.as_array().unwrap().len(), 1);
     assert_eq!(store.list_logs(None, None, None).unwrap().len(), 1);
     assert_eq!(store.list_callbacks().unwrap()[0].id, 1);

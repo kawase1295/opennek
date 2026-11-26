@@ -149,7 +149,7 @@ async fn clear_messages(State(host): Shared, Query(q): Query<HashMap<String, Str
     Ok(StatusCode::NO_CONTENT)
 }
 
-const CSV_COLUMNS: [&str; 13] = [
+const CSV_COLUMNS: [&str; 14] = [
     "id",
     "time",
     "deviceId",
@@ -163,6 +163,7 @@ const CSV_COLUMNS: [&str; 13] = [
     "auth",
     "downlink",
     "downlinkStatus",
+    "simulated",
 ];
 
 fn csv_cell(v: &Value) -> String {

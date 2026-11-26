@@ -253,12 +253,13 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     let lines: Vec<&str> = csv.lines().collect();
     assert_eq!(
         lines[0],
-        "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus"
+        "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus,simulated"
     );
     assert_eq!(lines.len(), 4);
     let cells: Vec<&str> = lines[1].splitn(6, ',').collect();
     assert_eq!(cells[2..5], ["00763DA3", "1981", "11"]);
     assert!(cells[1].ends_with('Z') && cells[1].len() == 24, "{}", cells[1]);
+    assert!(lines[1].ends_with(",false"), "{}", lines[1]);
     assert!(
         cells[5].starts_with(r#""{""v"":1,""w"":1}",false,false,"#),
         "{}",

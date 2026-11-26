@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL,
   data TEXT NOT NULL, ack INTEGER NOT NULL, oob INTEGER NOT NULL, rssi INTEGER NOT NULL, nb_frames INTEGER NOT NULL,
   auth TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
-  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none'
+  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none', simulated INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_device ON messages (device_id, id);
 CREATE TABLE IF NOT EXISTS callbacks (
@@ -583,6 +583,8 @@ pub enum DownlinkStatus {
     Failed,
     Nodata,
     Unsupported,
+    /// The data was resolved but not sent: the uplink was simulated
+    Simulated,
 }
 
 impl DownlinkStatus {
@@ -595,6 +597,7 @@ impl DownlinkStatus {
             DownlinkStatus::Failed => "failed",
             DownlinkStatus::Nodata => "nodata",
             DownlinkStatus::Unsupported => "unsupported",
+            DownlinkStatus::Simulated => "simulated",
         }
     }
 }
@@ -632,6 +635,8 @@ pub struct NewMessage {
     pub decoded: Option<Value>,
     pub downlink: Option<String>,
     pub downlink_status: DownlinkStatus,
+    /// Made up from the web UI or the API (POST /api/uplinks), not received
+    pub simulated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -712,6 +717,7 @@ fn to_message(r: &Row) -> Result<Message> {
             decoded: decoded.and_then(|d| serde_json::from_str(&d).ok()),
             downlink: r.get("downlink")?,
             downlink_status: parse_text(r, "downlink_status")?,
+            simulated: r.get("simulated")?,
         },
     })
 }
@@ -766,6 +772,10 @@ impl Store {
         // src was the MAC address of the ESP-NOW device, where its downlinks went
         if cols.iter().any(|c| c == "src") {
             db.execute_batch("ALTER TABLE messages DROP COLUMN src")?;
+        }
+        // DBs from before uplinks could be simulated (#95) hold received ones only
+        if !cols.iter().any(|c| c == "simulated") {
+            db.execute_batch("ALTER TABLE messages ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0")?;
         }
         Ok(Store { db: Mutex::new(db) })
     }
@@ -850,8 +860,8 @@ impl Store {
         let decoded = m.decoded.as_ref().map(Value::to_string);
         let r = db.query_row(
             "INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, station, decoded, downlink,
-               downlink_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+               downlink_status, simulated)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
             params![
                 m.device_id,
                 m.time,
@@ -865,7 +875,8 @@ impl Store {
                 m.station,
                 decoded,
                 m.downlink,
-                m.downlink_status.as_str()
+                m.downlink_status.as_str(),
+                m.simulated
             ],
             to_message,
         )?;
