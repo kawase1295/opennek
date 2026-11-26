@@ -903,6 +903,14 @@ impl Store {
             .collect()
     }
 
+    /// All messages, or a device's, oldest first and without a limit
+    pub fn export_messages(&self, device_id: Option<&str>) -> Result<Vec<Message>> {
+        self.db()
+            .prepare("SELECT * FROM messages WHERE ?1 IS NULL OR device_id = ?1 ORDER BY id")?
+            .query_map([device_id], to_message)?
+            .collect()
+    }
+
     /// All messages, or a device's
     pub fn clear_messages(&self, device_id: Option<&str>) -> Result<()> {
         match device_id {
