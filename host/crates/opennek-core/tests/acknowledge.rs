@@ -370,6 +370,20 @@ async fn each_outcome_of_a_downlink_is_acknowledged_with_its_info_code() {
         );
         assert_eq!(m.fields.downlink_status, status, "{name}");
         assert_eq!(s.acks().len(), 1, "{name}");
+        // the protocol docs have the same table
+        let status = serde_json::to_value(status).unwrap();
+        let row = format!(
+            "| `{code}` | `{info}` | `{}` | `{}` |",
+            code == 0,
+            status.as_str().unwrap()
+        );
+        for doc in ["protocol.md", "protocol.ja.md"] {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/").to_string() + doc;
+            assert!(
+                std::fs::read_to_string(path).unwrap().contains(&row),
+                "{doc} has no row {row}"
+            );
+        }
     }
 }
 

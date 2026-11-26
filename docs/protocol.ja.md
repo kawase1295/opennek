@@ -66,3 +66,42 @@ Sigfox バックエンドのカスタムコールバックと互換の変数を�
 ```
 
 レスポンスが `204 No Content` ならダウンリンクを送らない。
+
+### SERVICE ACKNOWLEDGE
+
+SERVICE ACKNOWLEDGE のコールバック (URL チャンネル) は、ダウンリンクを要求したアップリンク (`{ack}` が `true`) ごとに、
+ホストがそのダウンリンクの結果を決めたあとで 1 回、対象デバイスについて送る。送り方 (Url pattern・メソッド・ヘッダー・本文・
+Content type・SNI) と認証の確認は DATA と同じで、コールバックの履歴に残る。変数は Sigfox Backend の ACKNOWLEDGE
+コールバックと同じものだけ。
+
+| 変数 | 内容 |
+|---|---|
+| `{device}` | デバイス ID (8 桁 16 進) |
+| `{time}` | アップリンクの受信時刻 (UNIX 秒) |
+| `{infoCode}` | ダウンリンクの結果 (下の表) |
+| `{infoMessage}` | 同じ内容の文 |
+| `{downlinkAck}` | ダウンリンクを送信できたら `true` |
+| `{downlinkOverusage}` | 常に `false` (OpenNEK にはダウンリンクの上限がない) |
+
+ホストは、ダウンリンクのデータ、署名する鍵、送信機、タイミング、電波の順に結果を決める。そのため、ダウンリンクのデータが
+ないアップリンクは、受信だけのホストでも `1` になる。
+
+| 結果 | `{infoCode}` | `{infoMessage}` | `{downlinkAck}` | ダウンリンクの状態 |
+|---|---|---|---|---|
+| デバイスの受信ウィンドウ内に送信した | `0` | `Acked: the downlink was transmitted` | `true` | `sent` |
+| ダウンリンクのデータがない: `none`、固定データが空、またはダウンリンク用の BIDIR が `downlinkData` を返さなかった (`204`・HTTP エラー・タイムアウトを含む) | `1` | `No answer: no downlink data was given` | `false` | `nodata` |
+| `downlinkData` が 8 バイトの 16 進ではない | `2` | `Invalid payload: the downlink data is not 8 bytes of hex` | `false` | `nodata` |
+| `callback` なのに、デバイスに当てはまる有効な DATA BIDIR がダウンリンク用に選ばれていない | `8` | `Invalid configuration: the device takes its downlink from a callback, but no DATA BIDIR callback is chosen for downlink` | `false` | `nodata` |
+| 署名する鍵がない: アップリンクが認証されていない | `4` | `Network error: not transmitted, the uplink is not authenticated` | `false` | `nodata` |
+| **受信機からダウンリンクを送信する** がオフ | `4` | `Network error: not transmitted, OpenNEK is receiving only` | `false` | `unsupported` |
+| フレーム 1 を受けていない、またはその周波数が分からない | `4` | `Network error: not transmitted, the time or frequency of frame 1 is unknown` | `false` | `unsupported` |
+| ダウンリンクの用意ができたときには、デバイスの受信ウィンドウが閉じていた | `4` | `Network error: not transmitted, the device's receive window has closed` | `false` | `failed` |
+| 受信機が送信しなかった (RTL-SDR、ウィンドウが閉じるまでチャネルが埋まっていた、など) | `4` | `Network error: not transmitted, the transmitter did not send it` | `false` | `failed` |
+
+コードは Backend と同じ: `0` ACKED、`1` NO_ANSWER、`2` INVALID_PAYLOAD、`4` NETWORK_ERROR、`8` INVALID_CONFIGURATION。
+`3` OVERRUN_ERROR (1 日の上限がない)、`5` PENDING、`6` NO_DOWNLINK_CONTRACT、`7` TOO_MANY_REQUESTS は送らない。
+正しいダウンリンクのデータが与えられたら、送れなかったときもメッセージに保存する。
+
+Backend と同じく、このコールバックは基地局が何をしたかを 1 回だけ知らせる。あとでデバイスがダウンリンクの受信確認を送っても
+(状態 `acked`)、2 回目の ACKNOWLEDGE コールバックは送らない。**テスト送信** では、直近のメッセージのダウンリンクを送信できた
+ものとして送る (`{infoCode}` は `0`)。
