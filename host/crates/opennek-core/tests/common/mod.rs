@@ -6,8 +6,16 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use opennek_core::radio::{LinePort, Opener};
+use axum::Router;
+use axum::body::{Body, Bytes};
+use axum::http::{HeaderMap, Request, StatusCode, Uri};
+use axum::routing::any;
+use http_body_util::BodyExt;
+use opennek_core::host::Host;
+use opennek_core::radio::{DownlinkTx, LinePort, Opener, Transmitter};
 use opennek_core::serial::PortInfo;
+use serde_json::Value;
+use tower::ServiceExt;
 
 pub fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -148,4 +156,80 @@ pub fn cfo_streamer_lines(file: &str) -> Vec<String> {
         }
     }
     lines
+}
+
+#[derive(Clone, Debug)]
+pub struct Hit {
+    pub method: String,
+    pub uri: String,
+    pub content_type: String,
+    pub body: String,
+}
+
+/// A user's server: records each request and answers with `reply`
+pub async fn user_server(status: u16, reply: &'static str, delay: Duration) -> (String, Arc<Mutex<Vec<Hit>>>) {
+    let hits = Arc::new(Mutex::new(vec![]));
+    let seen = hits.clone();
+    let app = Router::new().fallback(any(
+        move |method: axum::http::Method, uri: Uri, headers: HeaderMap, body: Bytes| {
+            let seen = seen.clone();
+            async move {
+                seen.lock().unwrap().push(Hit {
+                    method: method.to_string(),
+                    uri: uri.to_string(),
+                    content_type: headers
+                        .get("content-type")
+                        .map_or("", |v| v.to_str().unwrap())
+                        .to_string(),
+                    body: String::from_utf8_lossy(&body).into_owned(),
+                });
+                tokio::time::sleep(delay).await;
+                (StatusCode::from_u16(status).unwrap(), reply)
+            }
+        },
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, hits)
+}
+
+pub async fn eventually_async<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
+    for _ in 0..1000 {
+        if let Some(v) = f() {
+            return v;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for {what}");
+}
+
+pub async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
+    let req = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json");
+    let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
+    let res = opennek_core::server::router(host.clone())
+        .oneshot(req.body(body).unwrap())
+        .await
+        .unwrap();
+    let status = res.status();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+/// A transmitter that records the downlinks it is given
+#[derive(Default)]
+pub struct FakeTx {
+    pub sent: Mutex<Vec<DownlinkTx>>,
+    /// Answers that it did not transmit
+    pub refuse: bool,
+}
+
+impl Transmitter for FakeTx {
+    fn transmit(&self, tx: &DownlinkTx) -> bool {
+        self.sent.lock().unwrap().push(tx.clone());
+        !self.refuse
+    }
 }

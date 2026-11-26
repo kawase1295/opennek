@@ -5,10 +5,9 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::http::{HeaderMap, Request, StatusCode, Uri};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::routing::any;
-use common::{FakeStreamer, fixture, streamer_lines};
-use http_body_util::BodyExt;
+use common::{FakeStreamer, api, eventually_async, fixture, streamer_lines, user_server};
 use opennek_core::engine::Engine;
 use opennek_core::host::Host;
 use opennek_core::radio::{RadioEvent, RadioMessage};
@@ -17,71 +16,9 @@ use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
 use sigfox::frame::{DeviceId, UplinkFields};
 use sigfox::receiver::SigfoxMessage;
-use tower::ServiceExt;
-
-#[derive(Clone, Debug)]
-struct Hit {
-    method: String,
-    uri: String,
-    content_type: String,
-    body: String,
-}
-
-/// A user's server: records each request and answers with `reply`
-async fn user_server(status: u16, reply: &'static str, delay: Duration) -> (String, Arc<Mutex<Vec<Hit>>>) {
-    let hits = Arc::new(Mutex::new(vec![]));
-    let seen = hits.clone();
-    let app = Router::new().fallback(any(
-        move |method: axum::http::Method, uri: Uri, headers: HeaderMap, body: Bytes| {
-            let seen = seen.clone();
-            async move {
-                seen.lock().unwrap().push(Hit {
-                    method: method.to_string(),
-                    uri: uri.to_string(),
-                    content_type: headers
-                        .get("content-type")
-                        .map_or("", |v| v.to_str().unwrap())
-                        .to_string(),
-                    body: String::from_utf8_lossy(&body).into_owned(),
-                });
-                tokio::time::sleep(delay).await;
-                (StatusCode::from_u16(status).unwrap(), reply)
-            }
-        },
-    ));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (url, hits)
-}
-
-async fn eventually_async<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
-    for _ in 0..1000 {
-        if let Some(v) = f() {
-            return v;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
 
 fn callback(url: &str, body: &str) -> CallbackInput {
     CallbackInput::parse(json!({ "name": "test", "url": url, "bodyTemplate": body })).unwrap()
-}
-
-async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
-    let req = Request::builder()
-        .method(method)
-        .uri(path)
-        .header("content-type", "application/json");
-    let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
-    let res = opennek_core::server::router(host.clone())
-        .oneshot(req.body(body).unwrap())
-        .await
-        .unwrap();
-    let status = res.status();
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
 #[tokio::test(flavor = "multi_thread")]

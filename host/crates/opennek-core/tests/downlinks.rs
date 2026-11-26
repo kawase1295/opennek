@@ -1,8 +1,11 @@
+mod common;
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use common::FakeTx;
 use opennek_core::engine::{Engine, Event};
-use opennek_core::radio::{DownlinkTx, RadioEvent, RadioMessage, Transmitter, now_ms};
+use opennek_core::radio::{RadioEvent, RadioMessage, now_ms};
 use opennek_core::store::{DeviceInput, DownlinkStatus, MessageQuery, Store};
 use serde_json::json;
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
@@ -13,19 +16,6 @@ use sigfox::receiver::SigfoxMessage;
 const ULF: u32 = 923_183_000; // frame 1 somewhere in the macro channel
 const PRIVATE_KEY: [u8; 16] = [0x3f, 0x2a, 0x10, 0x99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const DATA: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
-
-#[derive(Default)]
-struct FakeTx {
-    sent: Mutex<Vec<DownlinkTx>>,
-    refuse: bool,
-}
-
-impl Transmitter for FakeTx {
-    fn transmit(&self, tx: &DownlinkTx) -> bool {
-        self.sent.lock().unwrap().push(tx.clone());
-        !self.refuse
-    }
-}
 
 fn uplink(key: &[u8; 16], counter: u16, first_frame_end_at: Option<i64>, uplink_freq_hz: Option<u32>) -> RadioMessage {
     let f = UplinkFields {
