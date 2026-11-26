@@ -106,3 +106,9 @@ also when it could not be sent.
 As in the Backend, the callback reports what the station did, once. The device's later confirmation of the downlink
 (status `acked`) sends no second ACKNOWLEDGE callback. **Send test** sends it as if the latest message's downlink had
 been transmitted (`{infoCode}` `0`).
+
+## CSV export
+
+The **CSV** button on the **Messages** tab downloads `GET /api/messages.csv`. The file holds every stored message,
+oldest first. The host keeps the newest 10,000 messages. When you choose a device in the device list on the same tab,
+the file holds only that device's messages.
