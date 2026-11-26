@@ -66,3 +66,37 @@ taken from the response of a callback marked for downlinks, in either of these f
 ```
 
 A `204 No Content` response means no downlink is sent.
+
+---
+
+## Simulated uplinks
+
+`POST /api/uplinks` makes up an uplink and handles it like one from the receiver, with or without a receiver.
+The host signs the frame with the device's registered key, or with the public key when no key is registered.
+It then stores the message, shows it in the web UI and runs the DATA callbacks with the variables above.
+
+| Field | Required | Contents |
+|---|---|---|
+| `device` | yes | device ID (8 hex digits). An unknown device is added, as on reception |
+| `data` | yes | payload (hex, 0 to 12 bytes) |
+| `ack` | no | downlink requested, `true` / `false` (default `false`) |
+| `seq` | no | sequence number, 0 to 4095. Default: the device's last plus one, 0 after 4095 and for a new device |
+| `rssi` | no | RSSI in dBm, -200 to 0 (default `-100`) |
+| `key` | no | key to sign with instead (32 hex digits). For a registered device, another key shows a key mismatch and no callbacks run. For a device without a key, a key other than the public key shows unverified |
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks \
+  -H 'Content-Type: application/json' \
+  -d '{"device":"0A1B2C3D","data":"0102","ack":true}'
+```
+
+The host answers `201 Created` with the stored message after the callbacks have answered. The message has
+`"simulated": true`, and so has its row in the CSV.
+
+With `ack: true`, the host resolves the downlink data the device would get (its static data or the `downlinkData` of
+a DATA BIDIR callback) and puts it on the message. It never transmits the downlink, even with downlinks turned on.
+`downlinkStatus` is `simulated`, or `nodata` when there is no data or the uplink failed authentication.
+
+Send the body as JSON with `Content-Type: application/json`. A field with an invalid value gets `400 Bad Request`
+with `{"error": "<field>: <what is expected>"}`. Give `seq` when you send uplinks of one device at the same time,
+because two uplinks without `seq` can get the same number.
