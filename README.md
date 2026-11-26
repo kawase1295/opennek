@@ -122,6 +122,16 @@ ATS410=0    → back to the private key; do this before using the real network a
 
 Anyone can sign with the public key, so it only shows that the frame is consistent, not who sent it.
 
+### Link quality
+
+Click a device in the **Devices** tab to see how well it gets through. The view shows the messages received with the
+first and last time, RSSI over time with its min / average / max, and the share of uplinks received with 3/3, 2/3 and 1/3
+frames. It also counts the uplinks missed and the authentication results. It covers the device's stored messages
+(OpenNEK keeps the latest 10,000 messages of all devices) and follows new uplinks as they arrive.
+
+Missed uplinks are counted from the gaps in the sequence numbers, which go up by one for every uplink and wrap from 4095
+to 0. A device that restarts its counter, a jump of more than 256, and a late or repeated uplink are not counted.
+
 ### Downlinks
 
 Turn on **Settings → Send downlinks from the receiver**. The kit then answers every authenticated uplink
