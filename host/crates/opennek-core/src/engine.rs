@@ -12,7 +12,7 @@ use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
 use crate::acknowledge::DownlinkOutcome;
-use crate::callbacks::{CallbackResult, applies_to, run_callback};
+use crate::callbacks::{CallbackResult, applies_to, callback_vars, run_callback};
 use crate::console::{CONSOLE_LINES, ConsoleBuffer, ConsoleLine, radio_line};
 use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
@@ -286,7 +286,8 @@ impl Engine {
         let engine = self.clone();
         let finish = move || {
             let name = uplink.device.as_ref().map(|d| d.name.clone()).unwrap_or_default();
-            let results = engine.run_callbacks(&callbacks, &message, &name, settings.downlink_timeout_ms);
+            let vars = |cb: &Callback| callback_vars(cb, &message, &name);
+            let results = engine.run_callbacks(&callbacks, message.id, vars, settings.downlink_timeout_ms);
             engine.settle_downlink(&message, &uplink, &results);
         };
         // Callbacks wait for the user's server and a downlink for the device's receive window, neither of which may
@@ -299,24 +300,25 @@ impl Engine {
         Ok(())
     }
 
-    /// All callbacks at once; each answer is logged as it comes
+    /// All callbacks at once, each with its variables; each answer is logged for the message as it comes
     fn run_callbacks(
         &self,
         callbacks: &[Callback],
-        message: &Message,
-        device_name: &str,
+        message_id: i64,
+        vars: impl Fn(&Callback) -> HashMap<String, String> + Sync,
         timeout_ms: u32,
     ) -> Vec<CallbackResult> {
         let (done, answers) = std::sync::mpsc::channel();
+        let vars = &vars;
         std::thread::scope(|s| {
             for cb in callbacks {
                 let done = done.clone();
-                s.spawn(move || done.send((cb.id, run_callback(cb, message, device_name, timeout_ms))));
+                s.spawn(move || done.send((cb.id, run_callback(cb, &vars(cb), timeout_ms))));
             }
             drop(done);
             answers
                 .iter()
-                .map(|(callback_id, r)| self.log_callback(callback_id, message.id, r))
+                .map(|(callback_id, r)| self.log_callback(callback_id, message_id, r))
                 .collect()
         })
     }

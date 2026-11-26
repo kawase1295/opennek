@@ -344,10 +344,11 @@ async fn a_callback_response_can_carry_downlink_data() {
         ..message
     };
     let (chosen, not_chosen) = tokio::task::spawn_blocking(move || {
-        (
-            opennek_core::callbacks::run_callback(&chosen, &message, "", 2000),
-            opennek_core::callbacks::run_callback(&not_chosen, &message, "", 2000),
-        )
+        let run = |cb| {
+            let vars = opennek_core::callbacks::callback_vars(cb, &message, "");
+            opennek_core::callbacks::run_callback(cb, &vars, 2000)
+        };
+        (run(&chosen), run(&not_chosen))
     })
     .await
     .unwrap();
@@ -409,7 +410,8 @@ fn try_callback(url: &str, extra: Value) -> opennek_core::callbacks::CallbackRes
         input: CallbackInput::parse(body).unwrap(),
         id: 1,
     };
-    opennek_core::callbacks::run_callback(&cb, &opennek_core::callbacks::dummy_message(false), "", 1000)
+    let vars = opennek_core::callbacks::callback_vars(&cb, &opennek_core::callbacks::dummy_message(false), "");
+    opennek_core::callbacks::run_callback(&cb, &vars, 1000)
 }
 
 #[tokio::test(flavor = "multi_thread")]

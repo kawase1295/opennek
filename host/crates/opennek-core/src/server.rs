@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::callbacks::{CallbackResult, applies_to, dummy_message, run_callback};
+use crate::callbacks::{CallbackResult, applies_to, callback_vars, dummy_message, run_callback};
 use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::{RadioStatus, now_ms};
@@ -301,7 +301,7 @@ async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult
         .unwrap_or_default();
     let timeout = store.settings()?.downlink_timeout_ms;
     let (message, result) = tokio::task::spawn_blocking(move || {
-        let result = run_callback(&cb, &message, &device_name, timeout);
+        let result = run_callback(&cb, &callback_vars(&cb, &message, &device_name), timeout);
         (message, result)
     })
     .await

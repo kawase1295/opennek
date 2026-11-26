@@ -279,8 +279,8 @@ fn is_timeout(e: &ureq::Error) -> bool {
     matches!(e, ureq::Error::Timeout(_)) || e.to_string().starts_with("timeout")
 }
 
-/// Sends one callback and waits for its answer (blocking)
-pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u32) -> CallbackResult {
+/// Sends one callback with its variables and waits for its answer (blocking)
+pub fn run_callback(cb: &Callback, vars: &HashMap<String, String>, timeout_ms: u32) -> CallbackResult {
     let started = Instant::now();
     let timeout = Duration::from_millis(timeout_ms.into());
     let elapsed = || started.elapsed().as_millis() as i64;
@@ -300,21 +300,20 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
         })
     };
     let c = &cb.input;
-    let vars = callback_vars(cb, m, device_name);
-    let url = match url::Url::parse(&render_template(&c.url, &vars, Some(encode_uri_component))) {
+    let url = match url::Url::parse(&render_template(&c.url, vars, Some(encode_uri_component))) {
         Ok(url) => url,
         Err(e) => return failed(format!("invalid URL: {e}")),
     };
     let mut headers: Vec<(String, String)> = c
         .headers
         .iter()
-        .map(|(k, v)| (k.clone(), render_template(v.as_str().unwrap_or_default(), &vars, None)))
+        .map(|(k, v)| (k.clone(), render_template(v.as_str().unwrap_or_default(), vars, None)))
         .collect();
     let has_body = c.http_method != HttpMethod::Get;
     if has_body && !headers.iter().any(|(k, _)| k == "Content-Type") {
         headers.push(("Content-Type".into(), c.content_type.clone()));
     }
-    let body = has_body.then(|| render_template(&c.body_template, &vars, None));
+    let body = has_body.then(|| render_template(&c.body_template, vars, None));
     let mut out = Outgoing {
         method: c.http_method.as_str().into(),
         sni: c.send_sni,
@@ -357,7 +356,7 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
             duration_ms: elapsed(),
             response: Some(truncate_utf16(text, MAX_RESPONSE_LOG).to_string()),
             downlink: (c.downlink && c.callback_subtype == Some(CallbackSubtype::Bidir) && ok && status != 204)
-                .then(|| extract_downlink(text, &m.fields.device_id))
+                .then(|| extract_downlink(text, vars.get("device").map_or("", String::as_str)))
                 .flatten(),
         };
     }
