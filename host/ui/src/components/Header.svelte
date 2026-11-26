@@ -40,7 +40,7 @@
   </nav>
   <div class="header-end">
     <span class="radio-pill {pill.tone}" title={pill.title || t('pill.radio')}>
-      <i></i>{pill.label}{#if pill.detail}<span class="detail">{pill.detail}</span>{/if}
+      <i></i><span class="label">{pill.label}</span>{#if pill.detail}<span class="detail">{pill.detail}</span>{/if}
     </span>
     <select aria-label="Language" bind:value={chosen} onchange={changeLang}>
       {#each Object.entries(LANGUAGES) as [code, name] (code)}
