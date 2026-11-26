@@ -17,6 +17,7 @@ use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
 use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitter, now_ms};
 use crate::rtlsdr::is_rtlsdr;
+use crate::simulate::{UplinkInput, radio_message};
 use crate::store::{
     Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage,
     ReceiverPort, Store,
@@ -63,10 +64,18 @@ pub struct Engine {
     radio_line: Mutex<String>,
 }
 
+/// Where the downlink of an uplink goes, decided when the uplink comes in
+enum Tx {
+    /// Nowhere: no transmitter, or transmitting off
+    ReceiveOnly,
+    /// Nowhere either, but its data is resolved and shown
+    Simulated,
+    Transmit(Arc<dyn Transmitter>),
+}
+
 /// What a downlink needs to know about the uplink it answers
 struct Uplink {
-    /// None when receiving only: no transmitter, or transmitting off when the uplink came in
-    transmitter: Option<Arc<dyn Transmitter>>,
+    tx: Tx,
     device: Option<Device>,
     auth: Auth,
     trusted: bool,
@@ -189,8 +198,34 @@ impl Engine {
                 return Ok(());
             }
         }
+        self.accept(r, false).map(drop)
+    }
+
+    /// Handles a made-up uplink like a received one, signed with `input.key`, else the device's key, else the public
+    /// key. Its downlink is resolved but never sent. It returns once the callbacks have answered, with the message as
+    /// they and the downlink left it
+    pub fn simulate(self: &Arc<Self>, input: &UplinkInput) -> crate::store::Result<Message> {
+        let device = self.store.get_device(&input.device_id.to_string())?;
+        let seq = input.seq.unwrap_or_else(|| {
+            device
+                .as_ref()
+                .and_then(|d| d.last_seq)
+                .map_or(0, |last| ((last + 1) & 0xfff) as u16)
+        });
+        let key = input
+            .key
+            .or_else(|| device.as_ref().and_then(|d| parse_hex(&d.key)))
+            .unwrap_or(PUBLIC_KEY);
+        let m = self.accept(&radio_message(input, seq, &key, now_ms()), true)?;
+        // unless the messages were cleared meanwhile
+        Ok(self.store.get_message(m.id)?.unwrap_or(m))
+    }
+
+    /// Stores an uplink and shows it, then runs its callbacks and settles its downlink
+    fn accept(self: &Arc<Self>, r: &RadioMessage, simulated: bool) -> crate::store::Result<Message> {
+        let m = &r.message;
         let id = m.device_id.to_string();
-        self.store.ensure_device(&id, now)?;
+        self.store.ensure_device(&id, now_ms())?;
         let device = self.store.get_device(&id)?;
         let auth = Self::auth(device.as_ref(), m);
         self.store.touch_device(&id, m.counter, r.received_at)?;
@@ -244,7 +279,7 @@ impl Engine {
             } else {
                 DownlinkStatus::None
             },
-            simulated: false,
+            simulated,
         })?;
         self.emit(Event::Message {
             message: message.clone(),
@@ -267,12 +302,14 @@ impl Engine {
             self.confirm_downlink(&message.fields.device_id, m.counter)?;
         }
         // Decided once: a transmitter picked up later could run on the receiver's thread
-        let transmitter = self
-            .transmitter()
-            .filter(|_| message.fields.ack && settings.sigfox_downlink);
-        let waits = !callbacks.is_empty() || transmitter.is_some();
+        let tx = match self.transmitter() {
+            _ if simulated => Tx::Simulated,
+            Some(tx) if message.fields.ack && settings.sigfox_downlink => Tx::Transmit(tx),
+            _ => Tx::ReceiveOnly,
+        };
+        let waits = !callbacks.is_empty() || matches!(tx, Tx::Transmit(_));
         let uplink = Uplink {
-            transmitter,
+            tx,
             device,
             auth,
             trusted,
@@ -281,6 +318,7 @@ impl Engine {
             uplink_freq_hz: r.uplink_freq_hz,
         };
         let engine = self.clone();
+        let stored = message.clone();
         let finish = move || {
             let name = uplink.device.as_ref().map(|d| d.name.clone()).unwrap_or_default();
             let results = engine.run_callbacks(&callbacks, &message, &name, settings.downlink_timeout_ms);
@@ -289,13 +327,13 @@ impl Engine {
             }
         };
         // Callbacks wait for the user's server and a downlink for the device's receive window, neither of which may
-        // hold up the receiver
-        if waits {
+        // hold up the receiver. Whoever simulates an uplink waits for them
+        if waits && !simulated {
             std::thread::spawn(finish);
         } else {
             finish();
         }
-        Ok(())
+        Ok(stored)
     }
 
     /// All callbacks at once; each answer is logged as it comes
@@ -401,9 +439,11 @@ impl Engine {
     ) -> crate::store::Result<()> {
         let f = &message.fields;
         let name = format!("sigfox downlink for {} seq={}", f.device_id, f.seq);
-        // No transmitter or transmitting off: receive only (the callbacks were given ack=true all the same)
-        let Some(tx) = up.transmitter.as_ref() else {
-            return self.update_downlink(message.id, None, DownlinkStatus::Unsupported);
+        let tx = match &up.tx {
+            // No transmitter or transmitting off: receive only (the callbacks were given ack=true all the same)
+            Tx::ReceiveOnly => return self.update_downlink(message.id, None, DownlinkStatus::Unsupported),
+            Tx::Simulated => None,
+            Tx::Transmit(tx) => Some(tx),
         };
         let payload: Option<[u8; 8]> = data.as_deref().and_then(parse_hex);
         let (Some(data), Some(payload), Some(key)) = (data.clone(), payload, key) else {
@@ -414,6 +454,10 @@ impl Engine {
                 ));
             }
             return self.update_downlink(message.id, None, DownlinkStatus::Nodata);
+        };
+        let Some(tx) = tx else {
+            self.console(format!("{name} skipped: the uplink was simulated (data={data})"));
+            return self.update_downlink(message.id, Some(data), DownlinkStatus::Simulated);
         };
         let (Some(first_frame_end_at), Some(uplink_freq_hz)) = (up.first_frame_end_at, up.uplink_freq_hz) else {
             let why = if up.first_frame_end_at.is_none() {

@@ -21,6 +21,7 @@ use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::{RadioStatus, now_ms};
 use crate::receivers::list_ports;
+use crate::simulate::UplinkInput;
 use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings};
 
 // The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
@@ -65,6 +66,7 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/devices/{id}", put(save_device).delete(delete_device))
         .route("/messages", get(messages).delete(clear_messages))
         .route("/messages.csv", get(messages_csv))
+        .route("/uplinks", post(simulate_uplink))
         .route("/callbacks", get(callbacks).post(create_callback))
         .route("/callbacks/{id}", put(update_callback).delete(delete_callback))
         .route("/callbacks/{id}/test", post(test_callback))
@@ -216,6 +218,16 @@ async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>)
         limit: number(&q, "limit"),
     };
     to_json(host.engine.store().list_messages(&query)?)
+}
+
+// Answers once the callbacks have, with the message as they left it
+async fn simulate_uplink(State(host): Shared, Json(body): Json<Value>) -> Result<(StatusCode, Json<Value>), ApiError> {
+    let input = UplinkInput::parse(body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))?;
+    let engine = host.engine.clone();
+    let message = tokio::task::spawn_blocking(move || engine.simulate(&input))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    Ok((StatusCode::CREATED, to_json(message)?))
 }
 
 /// GET /api/callbacks: each callback with its newest answer
