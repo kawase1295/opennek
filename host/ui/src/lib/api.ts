@@ -7,6 +7,7 @@ import type {
   ConsoleLine,
   Device,
   Event,
+  LinkStats,
   Message,
   PortInfo,
   Settings,
@@ -16,6 +17,8 @@ import type {
 
 // What PUT /api/devices/{id} takes
 export type DeviceInput = Pick<Device, 'name' | 'key' | 'downlinkMode' | 'downlinkData' | 'payloadConfig'>
+
+export type UplinkInput = { device: string; data: string; ack?: boolean; seq?: number; rssi?: number; key?: string }
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
@@ -50,11 +53,13 @@ export const api = {
   devices: () => request<Device[]>('GET', '/devices'),
   saveDevice: (id: string, input: DeviceInput) => request<Device>('PUT', `/devices/${id}`, input),
   deleteDevice: (id: string) => request<void>('DELETE', `/devices/${id}`),
+  linkStats: (id: string) => request<LinkStats | null>('GET', `/devices/${id}/stats`),
 
   messages: (q: { device?: string; before?: number; limit: number }) =>
     request<Message[]>('GET', `/messages${query(q)}`),
   clearMessages: (device: string) => request<void>('DELETE', `/messages${query({ device })}`),
   messagesCsvUrl: (device: string) => `/api/messages.csv${query({ device })}`,
+  simulateUplink: (input: UplinkInput) => request<Message>('POST', '/uplinks', input),
 
   callbacks: () => request<CallbackSummary[]>('GET', '/callbacks'),
   saveCallback: (id: number | null, input: CallbackInput) =>

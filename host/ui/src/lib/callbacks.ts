@@ -12,6 +12,24 @@ export const SUBTYPES: Record<CallbackType, readonly CallbackSubtype[]> = {
 
 export const DEFAULT_BODY =
   '{"device":"{device}","time":{time},"data":"{data}","seqNumber":{seqNumber},"rssi":{rssi},"ack":{ack}}'
+export const ACKNOWLEDGE_BODY =
+  '{"device":"{device}","time":{time},"infoCode":{infoCode},"infoMessage":"{infoMessage}","downlinkAck":{downlinkAck},"downlinkOverusage":{downlinkOverusage}}'
+
+// 変数を入れるボタン。ACKNOWLEDGE の変数は Backend と同じくこの 6 つだけ (ホストの acknowledge.rs)
+const DATA_VARIABLES = [
+  '{device}', '{deviceName}', '{time}', '{data}', '{seqNumber}', '{ack}', '{oob}',
+  '{rssi}', '{snr}', '{station}', '{nbFrames}', '{customData#name}',
+]
+const ACKNOWLEDGE_VARIABLES = ['{device}', '{time}', '{infoCode}', '{infoMessage}', '{downlinkAck}', '{downlinkOverusage}']
+
+const isAcknowledge = (c: Pick<CallbackInput, 'callbackType' | 'callbackSubtype'>): boolean =>
+  c.callbackType === 'SERVICE' && c.callbackSubtype === 'ACKNOWLEDGE'
+
+export const variablesOf = (c: Pick<CallbackInput, 'callbackType' | 'callbackSubtype'>): readonly string[] =>
+  isAcknowledge(c) ? ACKNOWLEDGE_VARIABLES : DATA_VARIABLES
+
+const defaultBody = (c: Pick<CallbackInput, 'callbackType' | 'callbackSubtype'>): string =>
+  isAcknowledge(c) ? ACKNOWLEDGE_BODY : DEFAULT_BODY
 
 export function blankCallback(): CallbackInput {
   return {
@@ -38,18 +56,24 @@ export function blankCallback(): CallbackInput {
   }
 }
 
+// 本文が初期値のままなら、変えた先の種類の初期値にする
+function retemplated(before: CallbackInput, after: CallbackInput): CallbackInput {
+  return before.bodyTemplate === defaultBody(before) ? { ...after, bodyTemplate: defaultBody(after) } : after
+}
+
 // 種類を変えたらその最初の Subtype にする。ダウンリンクに選べるのは DATA BIDIR だけ
 export function withType(c: CallbackInput, type: CallbackType): CallbackInput {
-  return { ...c, callbackType: type, callbackSubtype: SUBTYPES[type][0] ?? null, downlink: false }
+  return retemplated(c, { ...c, callbackType: type, callbackSubtype: SUBTYPES[type][0] ?? null, downlink: false })
 }
 
 export function withSubtype(c: CallbackInput, subtype: CallbackSubtype): CallbackInput {
-  return { ...c, callbackSubtype: subtype, downlink: false }
+  return retemplated(c, { ...c, callbackSubtype: subtype, downlink: false })
 }
 
-// OpenNEK が送るのは DATA を URL へ。ほかは Backend と同じ形で保存だけする
-export const isSent = (c: Pick<CallbackInput, 'callbackType' | 'channel'>): boolean =>
-  c.callbackType === 'DATA' && c.channel === 'URL'
+// OpenNEK が送るのは DATA と SERVICE ACKNOWLEDGE を URL へ。ほかは Backend と同じ形で保存だけする
+// (ホストの CallbackInput::trigger と同じ決まり)
+export const isSent = (c: Pick<CallbackInput, 'callbackType' | 'callbackSubtype' | 'channel'>): boolean =>
+  c.channel === 'URL' && (c.callbackType === 'DATA' || isAcknowledge(c))
 
 // 一覧の Information 列
 export function information(c: CallbackInput): string {

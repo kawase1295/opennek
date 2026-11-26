@@ -5,10 +5,9 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::http::{HeaderMap, Request, StatusCode, Uri};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::routing::any;
-use common::{FakeStreamer, fixture, streamer_lines};
-use http_body_util::BodyExt;
+use common::{FakeStreamer, api, eventually_async, fixture, streamer_lines, user_server};
 use opennek_core::engine::Engine;
 use opennek_core::host::Host;
 use opennek_core::radio::{RadioEvent, RadioMessage};
@@ -17,71 +16,9 @@ use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
 use sigfox::frame::{DeviceId, UplinkFields};
 use sigfox::receiver::SigfoxMessage;
-use tower::ServiceExt;
-
-#[derive(Clone, Debug)]
-struct Hit {
-    method: String,
-    uri: String,
-    content_type: String,
-    body: String,
-}
-
-/// A user's server: records each request and answers with `reply`
-async fn user_server(status: u16, reply: &'static str, delay: Duration) -> (String, Arc<Mutex<Vec<Hit>>>) {
-    let hits = Arc::new(Mutex::new(vec![]));
-    let seen = hits.clone();
-    let app = Router::new().fallback(any(
-        move |method: axum::http::Method, uri: Uri, headers: HeaderMap, body: Bytes| {
-            let seen = seen.clone();
-            async move {
-                seen.lock().unwrap().push(Hit {
-                    method: method.to_string(),
-                    uri: uri.to_string(),
-                    content_type: headers
-                        .get("content-type")
-                        .map_or("", |v| v.to_str().unwrap())
-                        .to_string(),
-                    body: String::from_utf8_lossy(&body).into_owned(),
-                });
-                tokio::time::sleep(delay).await;
-                (StatusCode::from_u16(status).unwrap(), reply)
-            }
-        },
-    ));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (url, hits)
-}
-
-async fn eventually_async<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
-    for _ in 0..1000 {
-        if let Some(v) = f() {
-            return v;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("timed out waiting for {what}");
-}
 
 fn callback(url: &str, body: &str) -> CallbackInput {
     CallbackInput::parse(json!({ "name": "test", "url": url, "bodyTemplate": body })).unwrap()
-}
-
-async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
-    let req = Request::builder()
-        .method(method)
-        .uri(path)
-        .header("content-type", "application/json");
-    let body = body.map_or(Body::empty(), |b| Body::from(b.to_string()));
-    let res = opennek_core::server::router(host.clone())
-        .oneshot(req.body(body).unwrap())
-        .await
-        .unwrap();
-    let status = res.status();
-    let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -149,7 +86,7 @@ async fn real_sigfox_uplinks_run_callbacks() {
     let messages = host.engine.store().list_messages(&Default::default()).unwrap();
     assert_eq!(
         serde_json::to_value(messages[0].fields.downlink_status).unwrap(),
-        "unsupported"
+        "nodata"
     );
     let logs = host.engine.store().list_logs(None, None, None).unwrap();
     assert_eq!(logs.len(), 3);
@@ -342,10 +279,11 @@ async fn a_callback_response_can_carry_downlink_data() {
         ..message
     };
     let (chosen, not_chosen) = tokio::task::spawn_blocking(move || {
-        (
-            opennek_core::callbacks::run_callback(&chosen, &message, "", 2000),
-            opennek_core::callbacks::run_callback(&not_chosen, &message, "", 2000),
-        )
+        let run = |cb| {
+            let vars = opennek_core::callbacks::callback_vars(cb, &message, "");
+            opennek_core::callbacks::run_callback(cb, &vars, 2000)
+        };
+        (run(&chosen), run(&not_chosen))
     })
     .await
     .unwrap();
@@ -407,7 +345,8 @@ fn try_callback(url: &str, extra: Value) -> opennek_core::callbacks::CallbackRes
         input: CallbackInput::parse(body).unwrap(),
         id: 1,
     };
-    opennek_core::callbacks::run_callback(&cb, &opennek_core::callbacks::dummy_message(false), "", 1000)
+    let vars = opennek_core::callbacks::callback_vars(&cb, &opennek_core::callbacks::dummy_message(false), "");
+    opennek_core::callbacks::run_callback(&cb, &vars, 1000)
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -482,7 +421,7 @@ async fn a_callback_id_that_is_not_a_number_is_not_found() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn only_data_callbacks_to_a_url_are_sent() {
+async fn service_status_and_email_callbacks_are_not_sent() {
     let (url, hits) = user_server(204, "", Duration::ZERO).await;
     let store = Store::open_in_memory().unwrap();
     let uplink_cb = store.create_callback(&callback(&format!("{url}/up"), "{}")).unwrap();
@@ -555,6 +494,37 @@ async fn callbacks_opennek_does_not_send_cannot_be_tried() {
     let (status, err) = api(&host, "POST", "/api/callbacks/1/test", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err["error"].as_str().unwrap().contains("not sent"), "{err}");
+    let status_cb = json!({ "callbackType": "SERVICE", "callbackSubtype": "STATUS", "url": "http://127.0.0.1:9/" });
+    let (_, created) = api(&host, "POST", "/api/callbacks", Some(status_cb)).await;
+    let path = format!("/api/callbacks/{}/test", created["id"]);
+    assert_eq!(api(&host, "POST", &path, None).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acknowledge_callback_is_tried_as_if_the_downlink_had_been_sent() {
+    let (url, hits) = user_server(204, "", Duration::ZERO).await;
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    let ack = json!({
+        "callbackType": "SERVICE", "callbackSubtype": "ACKNOWLEDGE", "url": format!("{url}/ack"),
+        "bodyTemplate": r#"{"device":"{device}","time":{time},"infoCode":{infoCode},"infoMessage":"{infoMessage}","downlinkAck":{downlinkAck},"downlinkOverusage":{downlinkOverusage}}"#,
+    });
+    let (status, created) = api(&host, "POST", "/api/callbacks", Some(ack)).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let (status, tried) = api(&host, "POST", "/api/callbacks/1/test", None).await;
+    assert_eq!(status, StatusCode::OK, "{tried}");
+    assert_eq!(
+        (tried["result"]["ok"].clone(), tried["result"]["status"].clone()),
+        (json!(true), json!(204))
+    );
+    let body: Value = serde_json::from_str(&hits.lock().unwrap()[0].body).unwrap();
+    assert_eq!(
+        body,
+        json!({
+            "device": "F0000001", "time": tried["message"]["time"].as_i64().unwrap() / 1000, "infoCode": 0,
+            "infoMessage": "Acked: the downlink was transmitted", "downlinkAck": true, "downlinkOverusage": false,
+        })
+    );
+    assert!(host.engine.store().list_logs(None, None, None).unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

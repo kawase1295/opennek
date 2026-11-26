@@ -187,7 +187,7 @@ devices: string, };
 
 export type Auth = "ok" | "bad" | "public" | "unverified";
 
-export type DownlinkStatus = "none" | "pending" | "sent" | "acked" | "failed" | "nodata" | "unsupported";
+export type DownlinkStatus = "none" | "pending" | "sent" | "acked" | "failed" | "nodata" | "unsupported" | "simulated";
 
 export type Message = { id: number, deviceId: string, 
 /**
@@ -205,13 +205,46 @@ ack: boolean,
 /**
  * A control message (keep-alive, downlink confirmation)
  */
-oob: boolean, rssi: number, nbFrames: number, auth: Auth, station: string, decoded: Record<string, unknown> | null, downlink: string | null, downlinkStatus: DownlinkStatus, };
+oob: boolean, rssi: number, nbFrames: number, auth: Auth, station: string, decoded: Record<string, unknown> | null, downlink: string | null, downlinkStatus: DownlinkStatus, 
+/**
+ * Made up from the web UI or the API (POST /api/uplinks), not received
+ */
+simulated: boolean, };
+
+export type LinkStats = { messages: number, 
+/**
+ * Wall-clock ms of the oldest and newest
+ */
+first: number, last: number, rssi: RssiSummary, 
+/**
+ * Messages received with 1, 2 and 3 of the 3 frames: [0] is 1/3
+ */
+frames: [number, number, number], auth: AuthCounts, 
+/**
+ * Uplinks missed, counted from the gaps in seq
+ */
+missed: number, 
+/**
+ * Each message's time and RSSI, oldest first
+ */
+points: Array<RssiPoint>, };
+
+export type RssiSummary = { min: number, avg: number, max: number, };
+
+export type AuthCounts = { ok: number, bad: number, public: number, unverified: number, };
+
+export type RssiPoint = { 
+/**
+ * Wall-clock ms
+ */
+time: number, rssi: number, };
 
 export type CallbackLog = { id: number, callbackId: number, messageId: number, time: number, status: number | null, ok: boolean, error: string | null, durationMs: number, response: string | null, };
 
 export type CallbackResult = { status: number | null, ok: boolean, error: string | null, durationMs: number, response: string | null, 
 /**
- * 8 bytes of hex, only when the callback asks for downlink data and the response has it
+ * The downlinkData of the response (in lower case when a string), only when the callback asks for downlink data;
+ * whether it is 8 bytes of hex is checked when the downlink is settled
  */
 downlink: string | null, };
 

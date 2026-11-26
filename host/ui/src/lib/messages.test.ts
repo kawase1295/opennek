@@ -17,6 +17,7 @@ const msg = (id: number, deviceId = 'A'): Message => ({
   decoded: null,
   downlink: null,
   downlinkStatus: 'none',
+  simulated: false,
 })
 
 test('messages stay newest first', () => {

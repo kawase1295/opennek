@@ -1,5 +1,6 @@
 //! The OpenNEK host: receives real Sigfox uplinks from a USB receiver, stores them and serves the web UI.
 
+pub mod acknowledge;
 #[cfg(test)]
 mod api_types;
 pub mod callbacks;
@@ -8,6 +9,7 @@ pub mod downlink;
 pub mod engine;
 pub mod host;
 pub mod instance;
+pub mod link;
 pub mod logfile;
 pub mod payload;
 pub mod platform;
@@ -16,6 +18,7 @@ pub mod receivers;
 pub mod rtlsdr;
 pub mod serial;
 pub mod server;
+pub mod simulate;
 pub mod start;
 pub mod store;
 

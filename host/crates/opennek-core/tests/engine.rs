@@ -44,7 +44,7 @@ fn rssi_is_rounded_like_the_typescript_host() {
 }
 
 #[test]
-fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_unsupported() {
+fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_without_data_is_answered_as_nodata() {
     let engine = std::sync::Arc::new(Engine::new(Store::open_in_memory().unwrap()));
     let mut events = engine.subscribe();
     engine.handle_radio(message(7, -80.0));
@@ -53,7 +53,7 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_u
     assert_eq!(messages.len(), 1);
     let m = &messages[0].fields;
     assert_eq!((m.nb_frames, m.ack, m.time), (2, true, 1_000));
-    assert_eq!(serde_json::to_value(m.downlink_status).unwrap(), "unsupported");
+    assert_eq!(serde_json::to_value(m.downlink_status).unwrap(), "nodata");
     // reported as received (pending), then settled
     let statuses: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())
         .filter_map(|e| match e {
@@ -63,7 +63,7 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_is_answered_as_u
             _ => None,
         })
         .collect();
-    assert_eq!(statuses, ["pending", "unsupported"]);
+    assert_eq!(statuses, ["pending", "nodata"]);
 }
 
 #[test]

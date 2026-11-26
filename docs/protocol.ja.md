@@ -66,3 +66,86 @@ Sigfox バックエンドのカスタムコールバックと互換の変数を�
 ```
 
 レスポンスが `204 No Content` ならダウンリンクを送らない。
+
+### SERVICE ACKNOWLEDGE
+
+SERVICE ACKNOWLEDGE のコールバック (URL チャンネル) は、ダウンリンクを要求したアップリンク (`{ack}` が `true`) ごとに、
+ホストがそのダウンリンクの結果を決めたあとで 1 回、対象デバイスについて送る。送り方 (Url pattern・メソッド・ヘッダー・本文・
+Content type・SNI) と認証の確認は DATA と同じで、コールバックの履歴に残る。変数は Sigfox Backend の ACKNOWLEDGE
+コールバックと同じものだけ。
+
+| 変数 | 内容 |
+|---|---|
+| `{device}` | デバイス ID (8 桁 16 進) |
+| `{time}` | アップリンクの受信時刻 (UNIX 秒) |
+| `{infoCode}` | ダウンリンクの結果 (下の表) |
+| `{infoMessage}` | 同じ内容の文 |
+| `{downlinkAck}` | ダウンリンクを送信できたら `true` |
+| `{downlinkOverusage}` | 常に `false` (OpenNEK にはダウンリンクの上限がない) |
+
+ホストは、ダウンリンクのデータ、署名する鍵、送信機、タイミング、電波の順に結果を決める。そのため、ダウンリンクのデータが
+ないアップリンクは、受信だけのホストでも `1` になる。
+
+模擬アップリンクは、基地局がダウンリンクを送ったものとして `0` になる。受信機がなくても、アプリのダウンリンクの流れを最後まで
+試せる。何も送信していないことは `{infoMessage}` とメッセージの状態 `simulated` で分かる。
+
+| 結果 | `{infoCode}` | `{infoMessage}` | `{downlinkAck}` | ダウンリンクの状態 |
+|---|---|---|---|---|
+| デバイスの受信ウィンドウ内に送信した | `0` | `Acked: the downlink was transmitted` | `true` | `sent` |
+| 模擬アップリンク (**模擬アップリンク**、`POST /api/uplinks`): データを決めるが、何も送信しない | `0` | `Acked (simulated): the uplink was simulated, so nothing was transmitted` | `true` | `simulated` |
+| ダウンリンクのデータがない: `none`、固定データが空、またはダウンリンク用の BIDIR が `downlinkData` を返さなかった (`204`・HTTP エラー・タイムアウトを含む) | `1` | `No answer: no downlink data was given` | `false` | `nodata` |
+| `downlinkData` が 8 バイトの 16 進ではない | `2` | `Invalid payload: the downlink data is not 8 bytes of hex` | `false` | `nodata` |
+| `callback` なのに、デバイスに当てはまる有効な DATA BIDIR がダウンリンク用に選ばれていない | `8` | `Invalid configuration: the device takes its downlink from a callback, but no DATA BIDIR callback is chosen for downlink` | `false` | `nodata` |
+| 署名する鍵がない: アップリンクが認証されていない | `4` | `Network error: not transmitted, the uplink is not authenticated` | `false` | `nodata` |
+| **受信機からダウンリンクを送信する** がオフ | `4` | `Network error: not transmitted, OpenNEK is receiving only` | `false` | `unsupported` |
+| フレーム 1 を受けていない、またはその周波数が分からない | `4` | `Network error: not transmitted, the time or frequency of frame 1 is unknown` | `false` | `unsupported` |
+| ダウンリンクの用意ができたときには、デバイスの受信ウィンドウが閉じていた | `4` | `Network error: not transmitted, the device's receive window has closed` | `false` | `failed` |
+| 受信機が送信しなかった (RTL-SDR、ウィンドウが閉じるまでチャネルが埋まっていた、など) | `4` | `Network error: not transmitted, the transmitter did not send it` | `false` | `failed` |
+
+コードは Backend と同じ: `0` ACKED、`1` NO_ANSWER、`2` INVALID_PAYLOAD、`4` NETWORK_ERROR、`8` INVALID_CONFIGURATION。
+`3` OVERRUN_ERROR (1 日の上限がない)、`5` PENDING、`6` NO_DOWNLINK_CONTRACT、`7` TOO_MANY_REQUESTS は送らない。
+正しいダウンリンクのデータが与えられたら、送れなかったときもメッセージに保存する。
+
+Backend と同じく、このコールバックは基地局が何をしたかを 1 回だけ知らせる。あとでデバイスがダウンリンクの受信確認を送っても
+(状態 `acked`)、2 回目の ACKNOWLEDGE コールバックは送らない。**テスト送信** では、直近のメッセージのダウンリンクを送信できた
+ものとして送る (`{infoCode}` は `0`)。
+
+## 模擬アップリンク
+
+`POST /api/uplinks` はアップリンクを作り、受信機から届いたものと同じように扱う。受信機があってもなくても使える。
+フレームはデバイスに登録した鍵で署名し、鍵の登録がなければ公開鍵で署名する。
+そのうえでメッセージを保存して Web UI に表示し、上の変数で DATA コールバックを実行する。
+
+| フィールド | 必須 | 内容 |
+|---|---|---|
+| `device` | はい | デバイス ID (8 桁 16 進)。未知のデバイスは受信時と同じく追加する |
+| `data` | はい | ペイロード (16 進、0〜12 バイト) |
+| `ack` | いいえ | ダウンリンク要求 `true` / `false` (既定は `false`) |
+| `seq` | いいえ | シーケンス番号 0〜4095。既定はデバイスの最後の番号 + 1 で、4095 の次と新しいデバイスは 0 |
+| `rssi` | いいえ | RSSI (dBm、-200〜0。既定は `-100`) |
+| `key` | いいえ | 代わりに署名に使う鍵 (32 桁 16 進)。鍵を登録したデバイスでは、別の鍵なら鍵不一致になりコールバックは実行しない。鍵のないデバイスでは、公開鍵以外の鍵なら未検証になる |
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks \
+  -H 'Content-Type: application/json' \
+  -d '{"device":"0A1B2C3D","data":"0102","ack":true}'
+```
+
+コールバックの応答を待ってから、保存したメッセージを `201 Created` で返す。メッセージは `"simulated": true` で、
+CSV の行も同じ。
+
+`ack: true` なら、デバイスが受け取るはずのダウンリンクのデータ (固定データか、DATA BIDIR コールバックの
+`downlinkData`) を求めてメッセージに載せる。ダウンリンクの送信をオンにしていても送信はしない。
+`downlinkStatus` は `simulated` で、データが無いときと認証に通らなかったときは `nodata` になる。
+SERVICE ACKNOWLEDGE のコールバックも、ホストが応答する前に [SERVICE ACKNOWLEDGE](#service-acknowledge) の
+`{infoCode}` で送る。
+
+本文は `Content-Type: application/json` の JSON で送る。フィールドの値が不正なら `400 Bad Request` と
+`{"error": "<フィールド>: <期待する値>"}` を返す。同じデバイスのアップリンクを同時に送るときは `seq` を指定する。
+`seq` のない 2 つのアップリンクが同じ番号になることがあるため。
+
+## CSV エクスポート
+
+**メッセージ** タブの **CSV** ボタンは `GET /api/messages.csv` をダウンロードする。ファイルには、ホストが保存している
+すべてのメッセージが古い順に入る。ホストは最新の 10,000 件のメッセージを残す。同じタブのデバイス一覧でデバイスを
+選ぶと、ファイルにはそのデバイスのメッセージだけが入る。
