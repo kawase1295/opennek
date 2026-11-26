@@ -145,7 +145,10 @@ fn nothing_is_sent_unless_transmitting_is_enabled() {
     let s = setup(false, true, "", false);
     s.engine
         .handle_radio(RadioEvent::Message(uplink(&PUBLIC_KEY, 1, soon(), Some(ULF))));
-    assert_eq!(settled(&s.engine).0, DownlinkStatus::Unsupported);
+    assert_eq!(
+        settled(&s.engine),
+        (DownlinkStatus::Unsupported, Some("0102030405060708".into()))
+    );
     assert!(s.tx.sent.lock().unwrap().is_empty());
 }
 

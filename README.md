@@ -152,8 +152,9 @@ The firmware refuses anything outside these limits, whatever the host asks:
 Callbacks have the types, channels and fields of a device type's callbacks in the Sigfox Backend: **Type**
 (DATA UPLINK / BIDIR, SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED, ERROR), **Channel** (URL, BATCH_URL,
 EMAIL), Send duplicate, Custom payload config, Url pattern, Use HTTP Method, Send SNI, Headers, Content type and Body.
-OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA callbacks to
-a URL; the other types and channels are kept as in the Backend but not sent yet, which the **Callbacks** tab shows.
+OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA and SERVICE
+ACKNOWLEDGE callbacks to a URL; the other types and channels are kept as in the Backend but not sent yet, which the
+**Callbacks** tab shows.
 The url pattern, headers and body support the same variables as Sigfox custom callbacks (`{device}` `{time}`
 `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#name}`, … — full list in
 [docs/protocol.md](docs/protocol.md)).
@@ -169,6 +170,10 @@ The url pattern, headers and body support the same variables as Sigfox custom ca
   "Callback response". For the latter, make a DATA BIDIR callback and choose it in the Downlink column of the list
   (a new BIDIR callback is not chosen, as in the Backend); if the response is
   `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
+- **SERVICE ACKNOWLEDGE**: sent once for each uplink that requested a downlink, after OpenNEK has settled it, with the
+  Backend's variables (`{device}` `{time}` `{infoCode}` `{infoMessage}` `{downlinkAck}` `{downlinkOverusage}`).
+  `{infoCode}` is `0` when the downlink was transmitted; otherwise it says why not (table in
+  [docs/protocol.md](docs/protocol.md#service-acknowledge)).
 - **Send SNI** is on for new callbacks (the Backend leaves it off), since most HTTPS servers need it.
 - The **Send test** button fires the callback with the latest message (not recorded in the history). Each callback's
   last answer is in the list, and its history behind it.

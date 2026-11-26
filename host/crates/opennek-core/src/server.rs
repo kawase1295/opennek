@@ -16,13 +16,14 @@ use serde_json::{Value, json};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 
-use crate::callbacks::{CallbackResult, applies_to, dummy_message, run_callback};
+use crate::acknowledge::{DownlinkOutcome, acknowledge_vars};
+use crate::callbacks::{CallbackResult, applies_to, callback_vars, dummy_message, run_callback};
 use crate::engine::Event;
 use crate::host::Host;
 use crate::radio::{RadioStatus, now_ms};
 use crate::receivers::list_ports;
 use crate::simulate::UplinkInput;
-use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings};
+use crate::store::{Callback, CallbackInput, CallbackLog, DeviceInput, Message, MessageQuery, Settings, Trigger};
 
 // The build of host/ui (`npm run build`), embedded so the binary needs no file next to it; build.rs checks it is there
 const INDEX_HTML: &str = include_str!("../../../ui/dist/index.html");
@@ -283,17 +284,18 @@ pub struct TestResult {
     pub result: CallbackResult,
 }
 
-// Tries a callback with the latest message it applies to (or a made-up one); not logged
+// Tries a callback with the latest message it applies to (or a made-up one), an ACKNOWLEDGE callback as if that
+// message's downlink had been sent; not logged
 async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult {
     let id = id.parse().map_err(|_| not_found())?;
     let store = host.engine.store();
     let cb = store.get_callback(id)?.ok_or_else(not_found)?;
-    if !cb.input.is_sent() {
+    let Some(trigger) = cb.input.trigger() else {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
-            "this callback is not sent by OpenNEK: only DATA callbacks to a URL are".into(),
+            "this callback is not sent by OpenNEK: only DATA and SERVICE ACKNOWLEDGE callbacks to a URL are".into(),
         ));
-    }
+    };
     let recent = store.list_messages(&MessageQuery {
         limit: Some(50),
         ..Default::default()
@@ -301,14 +303,20 @@ async fn test_callback(State(host): Shared, Path(id): Path<String>) -> ApiResult
     let message = recent
         .into_iter()
         .find(|m| applies_to(&cb, &m.fields.device_id))
-        .unwrap_or_else(|| dummy_message(cb.input.downlink));
-    let device_name = store
-        .get_device(&message.fields.device_id)?
-        .map(|d| d.name)
-        .unwrap_or_default();
+        .unwrap_or_else(|| dummy_message(cb.input.downlink || trigger == Trigger::Downlink));
+    let vars = match trigger {
+        Trigger::Uplink => {
+            let device_name = store
+                .get_device(&message.fields.device_id)?
+                .map(|d| d.name)
+                .unwrap_or_default();
+            callback_vars(&cb, &message, &device_name)
+        }
+        Trigger::Downlink => acknowledge_vars(&message, DownlinkOutcome::Sent),
+    };
     let timeout = store.settings()?.downlink_timeout_ms;
     let (message, result) = tokio::task::spawn_blocking(move || {
-        let result = run_callback(&cb, &message, &device_name, timeout);
+        let result = run_callback(&cb, &vars, timeout);
         (message, result)
     })
     .await

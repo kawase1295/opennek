@@ -145,7 +145,7 @@ ATS410=0    → 秘密鍵に戻す。本番ネットワークで使う前に必�
 （DATA UPLINK / BIDIR、SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED、ERROR）、**Channel**（URL、BATCH_URL、
 EMAIL）、Send duplicate、Custom payload config、Url pattern、Use HTTP Method、Send SNI、Headers、Content type、Body。
 OpenNEK にはデバイスタイプがないので、代わりにコールバックごとに対象デバイスを指定します（空欄ならすべて）。
-OpenNEK が送るのは DATA を URL へのコールバックです。ほかの種類・チャンネルは Backend と同じ形で保存しますが、まだ
+OpenNEK が送るのは DATA と SERVICE ACKNOWLEDGE を URL へのコールバックです。ほかの種類・チャンネルは Backend と同じ形で保存しますが、まだ
 送られません（**コールバック** タブにそう表示されます）。Url pattern・ヘッダー・本文には Sigfox カスタムコールバックと
 同じ変数を使えます（`{device}` `{time}` `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#名前}`
 など。一覧は [docs/protocol.ja.md](docs/protocol.ja.md)）。
@@ -160,6 +160,10 @@ OpenNEK が送るのは DATA を URL へのコールバックです。ほかの�
 - **ダウンリンクのデータ**: デバイスの設定を「固定データ」（例: `{time}0102{rssi}`）か「コールバックのレスポンス」にします。
   後者では DATA BIDIR のコールバックを作り、一覧のダウンリンク列で選びます（Backend と同じく、作っただけでは選ばれません）。
   レスポンスで `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}` を返すと、それがデバイスへ届きます。
+- **SERVICE ACKNOWLEDGE**: ダウンリンクを要求したアップリンクごとに、OpenNEK がそのダウンリンクの結果を決めたあとで 1 回
+  送ります。変数は Backend と同じ `{device}` `{time}` `{infoCode}` `{infoMessage}` `{downlinkAck}` `{downlinkOverusage}`
+  です。`{infoCode}` は送信できたとき `0`、できなかったときはその理由を表します（表は
+  [docs/protocol.ja.md](docs/protocol.ja.md#service-acknowledge)）。
 - **Send SNI** は新しいコールバックでは最初からオンです（Backend はオフ）。ほとんどの HTTPS サーバーで必要なためです。
 - **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（履歴には残りません）。
   一覧に各コールバックの直近の結果が出て、そこから履歴を開けます。

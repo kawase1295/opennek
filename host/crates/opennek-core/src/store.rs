@@ -299,7 +299,7 @@ pub enum CallbackSubtype {
     Bidir,
     /// SERVICE: battery and temperature of an out-of-band message
     Status,
-    /// SERVICE: the device received the downlink
+    /// SERVICE: what became of the downlink an uplink asked for
     Acknowledge,
     Repeater,
     DataAdvanced,
@@ -542,10 +542,23 @@ impl CallbackInput {
         Ok(c)
     }
 
-    /// What OpenNEK sends: DATA callbacks (UPLINK and BIDIR) to a URL. The others are kept as in the Backend
-    pub fn is_sent(&self) -> bool {
-        self.callback_type == CallbackType::Data && self.channel == Channel::Url
+    /// When OpenNEK sends this callback: DATA (UPLINK and BIDIR) and SERVICE ACKNOWLEDGE callbacks to a URL. None for
+    /// the others, which are kept as in the Backend
+    pub fn trigger(&self) -> Option<Trigger> {
+        match (self.channel, self.callback_type, self.callback_subtype) {
+            (Channel::Url, CallbackType::Data, _) => Some(Trigger::Uplink),
+            (Channel::Url, CallbackType::Service, Some(CallbackSubtype::Acknowledge)) => Some(Trigger::Downlink),
+            _ => None,
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    /// For every uplink
+    Uplink,
+    /// Once the downlink an uplink asked for is settled
+    Downlink,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

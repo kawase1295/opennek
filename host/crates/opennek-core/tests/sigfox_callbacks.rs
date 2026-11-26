@@ -1,6 +1,6 @@
 //! Callbacks with the types, channels and fields of the Sigfox Backend (its device type's "New callback")
 
-use opennek_core::store::{CallbackInput, CallbackSubtype, CallbackType, Channel, HttpMethod, Store};
+use opennek_core::store::{CallbackInput, CallbackSubtype, CallbackType, Channel, HttpMethod, Store, Trigger};
 use serde_json::{Value, json};
 
 fn parse(body: Value) -> Result<CallbackInput, String> {
@@ -89,16 +89,28 @@ fn only_a_data_bidir_callback_is_chosen_for_downlink() {
 }
 
 #[test]
-fn opennek_sends_only_data_callbacks_to_a_url() {
-    let sent = |body: Value| parse(body).unwrap().is_sent();
-    assert!(sent(json!({ "url": "http://x/" })));
-    assert!(sent(json!({ "callbackSubtype": "BIDIR", "url": "http://x/" })));
-    assert!(!sent(
-        json!({ "callbackType": "SERVICE", "callbackSubtype": "STATUS", "url": "http://x/" })
-    ));
-    assert!(!sent(json!({ "callbackType": "ERROR", "url": "http://x/" })));
-    assert!(!sent(json!({ "channel": "BATCH_URL", "url": "http://x/" })));
-    assert!(!sent(json!({ "channel": "EMAIL", "recipient": "a@b.c" })));
+fn opennek_sends_data_callbacks_for_uplinks_and_acknowledge_callbacks_for_downlinks_to_a_url() {
+    let trigger = |body: Value| parse(body).unwrap().trigger();
+    assert_eq!(trigger(json!({ "url": "http://x/" })), Some(Trigger::Uplink));
+    assert_eq!(
+        trigger(json!({ "callbackSubtype": "BIDIR", "url": "http://x/" })),
+        Some(Trigger::Uplink)
+    );
+    assert_eq!(
+        trigger(json!({ "callbackType": "SERVICE", "callbackSubtype": "ACKNOWLEDGE", "url": "http://x/" })),
+        Some(Trigger::Downlink)
+    );
+    for not_sent in [
+        json!({ "callbackType": "SERVICE", "callbackSubtype": "STATUS", "url": "http://x/" }),
+        json!({ "callbackType": "SERVICE", "callbackSubtype": "REPEATER", "url": "http://x/" }),
+        json!({ "callbackType": "SERVICE", "callbackSubtype": "DATA_ADVANCED", "url": "http://x/" }),
+        json!({ "callbackType": "ERROR", "url": "http://x/" }),
+        json!({ "channel": "BATCH_URL", "url": "http://x/" }),
+        json!({ "channel": "EMAIL", "recipient": "a@b.c" }),
+        json!({ "callbackType": "SERVICE", "callbackSubtype": "ACKNOWLEDGE", "channel": "EMAIL", "recipient": "a@b.c" }),
+    ] {
+        assert_eq!(trigger(not_sent.clone()), None, "{not_sent}");
+    }
 }
 
 #[test]
