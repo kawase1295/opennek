@@ -21,7 +21,8 @@ pub struct CallbackResult {
     pub error: Option<String>,
     pub duration_ms: i64,
     pub response: Option<String>,
-    /// 8 bytes of hex, only when the callback asks for downlink data and the response has it
+    /// The downlinkData of the response (in lower case when a string), only when the callback asks for downlink data;
+    /// whether it is 8 bytes of hex is checked when the downlink is settled
     pub downlink: Option<String>,
 }
 
@@ -153,16 +154,20 @@ pub fn applies_to(cb: &Callback, device_id: &str) -> bool {
     list.is_empty() || list.iter().any(|d| d == device_id)
 }
 
-/// Downlink data from a response: Sigfox style ({"<ID>": {"downlinkData": ..}}, the ID in either case) or flat
+/// The downlinkData of a response, as given: Sigfox style ({"<ID>": {"downlinkData": ..}}, the ID in either case) or
+/// flat. A string comes in lower case, any other value as JSON
 pub fn extract_downlink(body: &str, device_id: &str) -> Option<String> {
     let json: Value = serde_json::from_str(body).ok()?;
     let obj = json.as_object()?;
     let data = [device_id.to_string(), device_id.to_lowercase()]
         .iter()
         .find_map(|id| obj.get(id).and_then(|d| d.get("downlinkData")).filter(|d| !d.is_null()))
-        .or_else(|| obj.get("downlinkData"))?
-        .as_str()?;
-    (data.len() == 16 && data.bytes().all(|b| b.is_ascii_hexdigit())).then(|| data.to_lowercase())
+        .or_else(|| obj.get("downlinkData"))
+        .filter(|d| !d.is_null())?;
+    Some(match data {
+        Value::String(s) => s.to_lowercase(),
+        other => other.to_string(),
+    })
 }
 
 /// A message to try a callback with when no real one applies

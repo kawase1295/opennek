@@ -211,7 +211,8 @@ export type CallbackLog = { id: number, callbackId: number, messageId: number, t
 
 export type CallbackResult = { status: number | null, ok: boolean, error: string | null, durationMs: number, response: string | null, 
 /**
- * 8 bytes of hex, only when the callback asks for downlink data and the response has it
+ * The downlinkData of the response (in lower case when a string), only when the callback asks for downlink data;
+ * whether it is 8 bytes of hex is checked when the downlink is settled
  */
 downlink: string | null, };
 

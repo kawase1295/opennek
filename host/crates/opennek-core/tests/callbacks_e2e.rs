@@ -146,10 +146,12 @@ async fn real_sigfox_uplinks_run_callbacks() {
         ("POST", "application/json")
     );
     assert!(hit.uri.ends_with("/up?device=00763DA3"), "{}", hit.uri);
+    // seq 1984 asked for a downlink, but the device has no downlink data: that is decided before the receiver,
+    // which is receiving only, would be asked to send it
     let messages = host.engine.store().list_messages(&Default::default()).unwrap();
     assert_eq!(
         serde_json::to_value(messages[0].fields.downlink_status).unwrap(),
-        "unsupported"
+        "nodata"
     );
     let logs = host.engine.store().list_logs(None, None, None).unwrap();
     assert_eq!(logs.len(), 3);
