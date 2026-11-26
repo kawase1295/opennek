@@ -419,7 +419,7 @@ impl Engine {
                     station: &f.station,
                     rssi: f.rssi,
                 };
-                Ok(render_downlink(&d.downlink_data, &ctx).unwrap_or_else(|_| d.downlink_data.clone()))
+                render_downlink(&d.downlink_data, &ctx).map_err(|_| DownlinkOutcome::InvalidData)
             }
             "callback" if !up.bidir_chosen => Err(DownlinkOutcome::NoBidirCallback),
             "callback" => {
