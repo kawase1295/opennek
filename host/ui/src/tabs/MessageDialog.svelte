@@ -31,7 +31,8 @@
         <dt>{t('kv.data')}</dt><dd><code>{spaced(m.data)}</code></dd>
         <dt>{t('kv.decoded')}</dt><dd>{#if m.decoded}<code>{JSON.stringify(m.decoded)}</code>{:else}—{/if}</dd>
         <dt>RSSI</dt><dd>{m.rssi} dBm</dd>
-        <dt>{t('kv.frames')}</dt><dd>{m.nbFrames}/3</dd>
+        <dt>{t('kv.frames')}</dt>
+        <dd>{#if m.simulated}<span class="badge neutral soft">{t('msg.simulated')}</span>{:else}{m.nbFrames}/3{/if}</dd>
         <dt>{t('kv.auth')}</dt><dd><Badge badge={authBadge(m.auth)} /></dd>
         <dt>{t('kv.downlink')}</dt>
         <dd>

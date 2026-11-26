@@ -16,6 +16,7 @@ pub mod receivers;
 pub mod rtlsdr;
 pub mod serial;
 pub mod server;
+pub mod simulate;
 pub mod start;
 pub mod store;
 

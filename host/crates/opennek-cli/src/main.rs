@@ -28,8 +28,9 @@ fn print_events(mut events: broadcast::Receiver<Event>) {
                     if matches!(m.downlink_status, DownlinkStatus::None | DownlinkStatus::Pending) {
                         let data = if m.data.is_empty() { "-" } else { &m.data };
                         println!(
-                            "[{}] uplink {} seq={} data={data} rssi={} frames={} auth={}{}",
+                            "[{}] {} {} seq={} data={data} rssi={} frames={} auth={}{}",
                             ts(),
+                            if m.simulated { "simulated uplink" } else { "uplink" },
                             m.device_id,
                             m.seq,
                             m.rssi,
