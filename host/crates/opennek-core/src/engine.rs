@@ -64,11 +64,8 @@ pub struct Engine {
     radio_line: Mutex<String>,
 }
 
-/// Where the downlink of an uplink goes, decided when the uplink comes in
 enum Tx {
-    /// Nowhere: no transmitter, or transmitting off
     ReceiveOnly,
-    /// Nowhere either, but its data is resolved and shown
     Simulated,
     Transmit(Arc<dyn Transmitter>),
 }
@@ -217,11 +214,9 @@ impl Engine {
             .or_else(|| device.as_ref().and_then(|d| parse_hex(&d.key)))
             .unwrap_or(PUBLIC_KEY);
         let m = self.accept(&radio_message(input, seq, &key, now_ms()), true)?;
-        // unless the messages were cleared meanwhile
         Ok(self.store.get_message(m.id)?.unwrap_or(m))
     }
 
-    /// Stores an uplink and shows it, then runs its callbacks and settles its downlink
     fn accept(self: &Arc<Self>, r: &RadioMessage, simulated: bool) -> crate::store::Result<Message> {
         let m = &r.message;
         let id = m.device_id.to_string();
@@ -307,7 +302,7 @@ impl Engine {
             Some(tx) if message.fields.ack && settings.sigfox_downlink => Tx::Transmit(tx),
             _ => Tx::ReceiveOnly,
         };
-        let waits = !callbacks.is_empty() || matches!(tx, Tx::Transmit(_));
+        let blocks_receiver = !simulated && (!callbacks.is_empty() || matches!(tx, Tx::Transmit(_)));
         let uplink = Uplink {
             tx,
             device,
@@ -326,9 +321,7 @@ impl Engine {
                 engine.console(format!("error: {e}"));
             }
         };
-        // Callbacks wait for the user's server and a downlink for the device's receive window, neither of which may
-        // hold up the receiver. Whoever simulates an uplink waits for them
-        if waits && !simulated {
+        if blocks_receiver {
             std::thread::spawn(finish);
         } else {
             finish();
@@ -440,7 +433,6 @@ impl Engine {
         let f = &message.fields;
         let name = format!("sigfox downlink for {} seq={}", f.device_id, f.seq);
         let tx = match &up.tx {
-            // No transmitter or transmitting off: receive only (the callbacks were given ack=true all the same)
             Tx::ReceiveOnly => return self.update_downlink(message.id, None, DownlinkStatus::Unsupported),
             Tx::Simulated => None,
             Tx::Transmit(tx) => Some(tx),

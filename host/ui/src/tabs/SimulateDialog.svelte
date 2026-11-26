@@ -7,10 +7,8 @@
   let dialog: HTMLDialogElement
   let form = $state({ device: '', data: '', ack: false, key: '' })
   let error = $state('')
-  // the host answers once the callbacks have
   let sending = $state(false)
 
-  // for the device shown in the list, else the first one
   export function open(): void {
     form = { device: app.deviceFilter || (app.devices[0]?.id ?? ''), data: '', ack: false, key: '' }
     error = ''

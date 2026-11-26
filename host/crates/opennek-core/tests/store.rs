@@ -230,7 +230,6 @@ fn a_database_of_the_typescript_host_opens_unchanged() {
     assert_eq!(messages[0]["deviceId"], "00763DA3");
     assert_eq!(messages[0]["decoded"], json!({ "type": "keepAlive" }));
     assert_eq!(messages[0]["oob"], true);
-    // received: it is from before uplinks could be simulated
     assert_eq!(messages[0]["simulated"], false);
     assert_eq!(messages.as_array().unwrap().len(), 1);
     assert_eq!(store.list_logs(None, None, None).unwrap().len(), 1);

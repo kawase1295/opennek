@@ -17,7 +17,6 @@ import type {
 // What PUT /api/devices/{id} takes
 export type DeviceInput = Pick<Device, 'name' | 'key' | 'downlinkMode' | 'downlinkData' | 'payloadConfig'>
 
-// What POST /api/uplinks takes; fields left out take their defaults. Written here: the host parses it by hand
 export type UplinkInput = { device: string; data: string; ack?: boolean; seq?: number; rssi?: number; key?: string }
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'

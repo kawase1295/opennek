@@ -773,7 +773,6 @@ impl Store {
         if cols.iter().any(|c| c == "src") {
             db.execute_batch("ALTER TABLE messages DROP COLUMN src")?;
         }
-        // DBs from before uplinks could be simulated (#95) hold received ones only
         if !cols.iter().any(|c| c == "simulated") {
             db.execute_batch("ALTER TABLE messages ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0")?;
         }

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::{FakeStreamer, FakeTx, api, eventually, eventually_async, user_server};
+use common::{FakeStreamer, FakeTx, api, eventually, eventually_async, soon, user_server};
 use http_body_util::BodyExt;
 use opennek_core::engine::{Engine, Event};
 use opennek_core::host::Host;
@@ -16,7 +16,6 @@ use opennek_core::store::{
 };
 use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
-use sigfox::downlink::RC3_DL_T_W_MS;
 use sigfox::frame::{DeviceId, UplinkFields};
 use sigfox::receiver::SigfoxMessage;
 use tower::ServiceExt;
@@ -24,7 +23,6 @@ use tower::ServiceExt;
 const KEY: &str = "3f2a10990102030405060708090a0b0c";
 const KEY_BYTES: [u8; 16] = [0x3f, 0x2a, 0x10, 0x99, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-/// An uplink as the receiver gives it, with all three repetitions, at -87 dBm
 fn received(device_id: u32, key: &[u8; 16], counter: u16, payload: &[u8], downlink: bool) -> RadioEvent {
     let f = UplinkFields {
         device_id: DeviceId(device_id),
@@ -63,7 +61,6 @@ fn callback(url: &str, body: &str) -> CallbackInput {
     CallbackInput::parse(json!({ "url": url, "bodyTemplate": body })).unwrap()
 }
 
-/// Off the async runtime, as the server does: it waits for the user's server
 async fn simulate(engine: &Arc<Engine>, body: Value) -> Message {
     let engine = engine.clone();
     tokio::task::spawn_blocking(move || engine.simulate(&UplinkInput::parse(body).unwrap()))
@@ -101,7 +98,6 @@ async fn callbacks_get_the_variables_a_received_uplink_gives_them() {
     let hits = hits.lock().unwrap().clone();
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[1].uri, hits[0].uri);
-    // {time} aside
     let vars = |body: &str| {
         let mut vars: Vec<String> = body.split('|').map(String::from).collect();
         let time = vars.remove(2);
@@ -155,7 +151,6 @@ async fn a_downlink_request_shows_the_data_the_device_would_get_without_sending_
         downlink(simulate(&engine, up).await),
         (DownlinkStatus::Simulated, Some("a1a2a3a4a5a6a7a8".into()))
     );
-    // a device with neither gets none, as on air
     let up = json!({ "device": "0C000001", "data": "01", "ack": true });
     assert_eq!(downlink(simulate(&engine, up).await), (DownlinkStatus::Nodata, None));
     assert!(tx.sent.lock().unwrap().is_empty());
@@ -167,11 +162,10 @@ async fn a_downlink_request_shows_the_data_the_device_would_get_without_sending_
         "{logs:?}"
     );
 
-    // a received uplink is transmitted: its device's receive window opens in 100 ms
     let RadioEvent::Message(mut up) = received(0x0A00_0001, &PUBLIC_KEY, 1, &[1], true) else {
         unreachable!()
     };
-    up.first_frame_end_at = Some(now_ms() - RC3_DL_T_W_MS - 2000 + 100);
+    up.first_frame_end_at = soon();
     up.uplink_freq_hz = Some(923_183_000);
     engine.handle_radio(RadioEvent::Message(up));
     eventually_async("the received uplink's downlink", || {
@@ -200,13 +194,11 @@ async fn uplinks_are_signed_with_the_registered_key_else_the_public_key() {
         auth_and_runs(json!({ "device": "0B000001", "data": "01" })).await,
         (Auth::Public, 1)
     );
-    // another key than the registered one: the frame may be spoofed, so no callbacks
     let public = "00112233445566778899aabbccddeeff";
     assert_eq!(
         auth_and_runs(json!({ "device": "0A1B2C3D", "data": "01", "key": public })).await,
         (Auth::Bad, 0)
     );
-    // a device with no key registered checks only the public key
     assert_eq!(
         auth_and_runs(json!({ "device": "0B000001", "data": "01", "key": KEY })).await,
         (Auth::Unverified, 1)
@@ -297,26 +289,21 @@ fn the_seq_follows_on_from_the_devices_last_and_wraps() {
     let seq = |body: Value| engine.simulate(&UplinkInput::parse(body).unwrap()).unwrap().fields.seq;
     let next = || seq(json!({ "device": "0A1B2C3D", "data": "01" }));
     let before = now_ms();
-    // an unknown device is added, from 0
     assert_eq!(next(), 0);
     let added = engine.store().get_device("0A1B2C3D").unwrap().unwrap();
     assert_eq!(added.last_seq, Some(0));
     assert!(added.last_seen.unwrap() >= before);
     assert_eq!(next(), 1);
-    // after a received uplink too, wrapping after 4095
     engine.handle_radio(received(0x0A1B_2C3D, &PUBLIC_KEY, 4095, &[1], false));
     assert_eq!(next(), 0);
-    // from a seq given
     assert_eq!(seq(json!({ "device": "0A1B2C3D", "data": "01", "seq": 100 })), 100);
     assert_eq!(next(), 101);
     assert_eq!(
         engine.store().get_device("0A1B2C3D").unwrap().unwrap().last_seq,
         Some(101)
     );
-    // a registered device that was never seen starts from 0
     device(engine.store(), "0B000001", json!({ "name": "new" }));
     assert_eq!(seq(json!({ "device": "0B000001", "data": "" })), 0);
-    // shown live like received ones
     let live: Vec<(u16, bool)> = std::iter::from_fn(|| events.try_recv().ok())
         .filter_map(|e| match e {
             Event::Message { message } => Some((message.fields.seq, message.fields.simulated)),
@@ -350,7 +337,6 @@ async fn uplinks_are_simulated_with_or_without_a_receiver() {
             "0A1B2C3D",
             json!({ "downlinkMode": "static", "downlinkData": "0102030405060708" }),
         );
-        // a receiver that can transmit
         let streamer = FakeStreamer::with_lines(vec!["I fw=0.3.0 f=923200000 bw=10 sr=2000 boost=1 cfo=0 pd=4".into()]);
         let host = Host::new(store, Box::new(streamer.clone()));
         host.radio.start();
@@ -372,7 +358,6 @@ async fn uplinks_are_simulated_with_or_without_a_receiver() {
             (json!(true), json!("simulated"), json!("0102030405060708")),
             "{port:?}"
         );
-        // the receiver transmits between E1 and E0
         let written = streamer.written.lock().unwrap().clone();
         assert!(!written.iter().any(|l| l == "E1"), "{port:?}: {written:?}");
         assert_eq!(host.radio.status().state, state);

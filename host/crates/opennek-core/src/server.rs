@@ -220,7 +220,6 @@ async fn messages(State(host): Shared, Query(q): Query<HashMap<String, String>>)
     to_json(host.engine.store().list_messages(&query)?)
 }
 
-// Answers once the callbacks have, with the message as they left it
 async fn simulate_uplink(State(host): Shared, Json(body): Json<Value>) -> Result<(StatusCode, Json<Value>), ApiError> {
     let input = UplinkInput::parse(body).map_err(|e| ApiError(StatusCode::BAD_REQUEST, e))?;
     let engine = host.engine.clone();

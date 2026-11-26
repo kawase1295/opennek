@@ -12,9 +12,10 @@ use axum::http::{HeaderMap, Request, StatusCode, Uri};
 use axum::routing::any;
 use http_body_util::BodyExt;
 use opennek_core::host::Host;
-use opennek_core::radio::{DownlinkTx, LinePort, Opener, Transmitter};
+use opennek_core::radio::{DownlinkTx, LinePort, Opener, Transmitter, now_ms};
 use opennek_core::serial::PortInfo;
 use serde_json::Value;
+use sigfox::downlink::RC3_DL_T_W_MS;
 use tower::ServiceExt;
 
 pub fn fixture(name: &str) -> PathBuf {
@@ -166,7 +167,6 @@ pub struct Hit {
     pub body: String,
 }
 
-/// A user's server: records each request and answers with `reply`
 pub async fn user_server(status: u16, reply: &'static str, delay: Duration) -> (String, Arc<Mutex<Vec<Hit>>>) {
     let hits = Arc::new(Mutex::new(vec![]));
     let seen = hits.clone();
@@ -219,11 +219,9 @@ pub async fn api(host: &Arc<Host>, method: &str, path: &str, body: Option<Value>
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
 }
 
-/// A transmitter that records the downlinks it is given
 #[derive(Default)]
 pub struct FakeTx {
     pub sent: Mutex<Vec<DownlinkTx>>,
-    /// Answers that it did not transmit
     pub refuse: bool,
 }
 
@@ -232,4 +230,9 @@ impl Transmitter for FakeTx {
         self.sent.lock().unwrap().push(tx.clone());
         !self.refuse
     }
+}
+
+// The device's receive window opens 100 ms after the downlink is due
+pub fn soon() -> Option<i64> {
+    Some(now_ms() - RC3_DL_T_W_MS - 2000 + 100)
 }

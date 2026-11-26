@@ -1,6 +1,3 @@
-//! Uplinks made up from the web UI or the API (POST /api/uplinks), without a receiver. They are signed like a real
-//! device's and go through the engine as received ones do
-
 use serde_json::Value;
 use sigfox::auth::uplink_auth;
 use sigfox::frame::{DeviceId, UplinkFields};
@@ -8,8 +5,7 @@ use sigfox::receiver::SigfoxMessage;
 
 use crate::radio::RadioMessage;
 
-/// Bytes: the most a Sigfox uplink carries
-const MAX_DATA: usize = 12;
+const MAX_PAYLOAD_BYTES: usize = 12;
 const DEFAULT_RSSI: i32 = -100;
 
 /// An uplink to simulate, as POST /api/uplinks takes it
@@ -27,7 +23,6 @@ pub struct UplinkInput {
     pub key: Option<[u8; 16]>,
 }
 
-/// An even number of hex digits
 fn hex(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -53,8 +48,8 @@ impl UplinkInput {
         let data = field("data")
             .and_then(Value::as_str)
             .and_then(hex)
-            .filter(|d| d.len() <= MAX_DATA)
-            .ok_or("data: hex, at most 12 bytes")?;
+            .filter(|d| d.len() <= MAX_PAYLOAD_BYTES)
+            .ok_or_else(|| format!("data: hex, at most {MAX_PAYLOAD_BYTES} bytes"))?;
         let ack = match field("ack") {
             Some(v) => v.as_bool().ok_or("ack: true or false")?,
             None => false,
@@ -95,8 +90,7 @@ impl UplinkInput {
     }
 }
 
-/// What the receiver gives for the uplink when all three repetitions come in
-pub fn radio_message(input: &UplinkInput, seq: u16, key: &[u8; 16], received_at: i64) -> RadioMessage {
+pub(crate) fn radio_message(input: &UplinkInput, seq: u16, key: &[u8; 16], received_at: i64) -> RadioMessage {
     let fields = UplinkFields {
         device_id: input.device_id,
         counter: seq,

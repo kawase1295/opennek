@@ -3,7 +3,7 @@ mod common;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use common::FakeTx;
+use common::{FakeTx, soon};
 use opennek_core::engine::{Engine, Event};
 use opennek_core::radio::{RadioEvent, RadioMessage, now_ms};
 use opennek_core::store::{DeviceInput, DownlinkStatus, MessageQuery, Store};
@@ -45,11 +45,6 @@ fn uplink(key: &[u8; 16], counter: u16, first_frame_end_at: Option<i64>, uplink_
         first_frame_end_at,
         uplink_freq_hz,
     }
-}
-
-// The device's receive window opens 100 ms after the downlink is due
-fn soon() -> Option<i64> {
-    Some(now_ms() - RC3_DL_T_W_MS - 2000 + 100)
 }
 
 struct Setup {
