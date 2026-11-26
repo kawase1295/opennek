@@ -9,6 +9,7 @@ use ts_rs::{Config, TS};
 use crate::callbacks::CallbackResult;
 use crate::console::ConsoleLine;
 use crate::engine::Event;
+use crate::link::{AuthCounts, LinkStats, RssiPoint, RssiSummary};
 use crate::radio::{RadioState, RadioStatus};
 use crate::serial::PortInfo;
 use crate::server::{CallbackSummary, Status, TestResult};
@@ -39,6 +40,10 @@ fn declarations() -> String {
         Auth::decl(&cfg),
         DownlinkStatus::decl(&cfg),
         Message::decl(&cfg),
+        LinkStats::decl(&cfg),
+        RssiSummary::decl(&cfg),
+        AuthCounts::decl(&cfg),
+        RssiPoint::decl(&cfg),
         CallbackLog::decl(&cfg),
         CallbackResult::decl(&cfg),
         RadioState::decl(&cfg),

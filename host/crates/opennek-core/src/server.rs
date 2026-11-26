@@ -63,6 +63,7 @@ pub fn router(host: Arc<Host>) -> Router {
         .route("/serial/ports", get(serial_ports))
         .route("/devices", get(devices))
         .route("/devices/{id}", put(save_device).delete(delete_device))
+        .route("/devices/{id}/stats", get(device_stats))
         .route("/messages", get(messages).delete(clear_messages))
         .route("/messages.csv", get(messages_csv))
         .route("/callbacks", get(callbacks).post(create_callback))
@@ -138,6 +139,10 @@ async fn save_device(State(host): Shared, Path(id): Path<String>, Json(body): Js
 async fn delete_device(State(host): Shared, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
     host.engine.store().delete_device(&id.to_uppercase())?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn device_stats(State(host): Shared, Path(id): Path<String>) -> ApiResult {
+    to_json(host.engine.store().link_stats(&id.to_uppercase())?)
 }
 
 fn device_param(q: &HashMap<String, String>) -> Option<String> {

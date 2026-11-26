@@ -8,6 +8,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::link::{AuthCounts, LinkStats, RssiPoint, RssiSummary, missed_uplinks};
+
 pub type Result<T> = rusqlite::Result<T>;
 
 const SCHEMA: &str = "
@@ -901,6 +903,47 @@ impl Store {
             )?
             .query_map(params![q.device_id, q.before, limit], to_message)?
             .collect()
+    }
+
+    /// None when the device has no messages
+    pub fn link_stats(&self, device_id: &str) -> Result<Option<LinkStats>> {
+        let db = self.db();
+        let rows: Vec<(i64, u16, i32)> = db
+            .prepare("SELECT time, seq, rssi FROM messages WHERE device_id = ? ORDER BY id")?
+            .query_map([device_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_>>()?;
+        // the sums are NULL over no rows
+        if rows.is_empty() {
+            return Ok(None);
+        }
+        db.query_row(
+            "SELECT COUNT(*), MIN(time), MAX(time), MIN(rssi), AVG(rssi), MAX(rssi),
+               SUM(nb_frames <= 1), SUM(nb_frames = 2), SUM(nb_frames >= 3),
+               SUM(auth = 'ok'), SUM(auth = 'bad'), SUM(auth = 'public'), SUM(auth = 'unverified')
+             FROM messages WHERE device_id = ?",
+            [device_id],
+            |r| {
+                Ok(Some(LinkStats {
+                    messages: r.get(0)?,
+                    first: r.get(1)?,
+                    last: r.get(2)?,
+                    rssi: RssiSummary {
+                        min: r.get(3)?,
+                        avg: r.get(4)?,
+                        max: r.get(5)?,
+                    },
+                    frames: [r.get(6)?, r.get(7)?, r.get(8)?],
+                    auth: AuthCounts {
+                        ok: r.get(9)?,
+                        bad: r.get(10)?,
+                        public: r.get(11)?,
+                        unverified: r.get(12)?,
+                    },
+                    missed: missed_uplinks(rows.iter().map(|&(_, seq, _)| seq)),
+                    points: rows.iter().map(|&(time, _, rssi)| RssiPoint { time, rssi }).collect(),
+                }))
+            },
+        )
     }
 
     /// All messages, or a device's
