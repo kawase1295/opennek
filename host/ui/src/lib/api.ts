@@ -17,6 +17,9 @@ import type {
 // What PUT /api/devices/{id} takes
 export type DeviceInput = Pick<Device, 'name' | 'key' | 'downlinkMode' | 'downlinkData' | 'payloadConfig'>
 
+// What POST /api/uplinks takes; fields left out take their defaults. Written here: the host parses it by hand
+export type UplinkInput = { device: string; data: string; ack?: boolean; seq?: number; rssi?: number; key?: string }
+
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
@@ -55,6 +58,7 @@ export const api = {
     request<Message[]>('GET', `/messages${query(q)}`),
   clearMessages: (device: string) => request<void>('DELETE', `/messages${query({ device })}`),
   messagesCsvUrl: (device: string) => `/api/messages.csv${query({ device })}`,
+  simulateUplink: (input: UplinkInput) => request<Message>('POST', '/uplinks', input),
 
   callbacks: () => request<CallbackSummary[]>('GET', '/callbacks'),
   saveCallback: (id: number | null, input: CallbackInput) =>

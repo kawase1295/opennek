@@ -11,8 +11,10 @@
   import EmptyState from '../components/EmptyState.svelte'
   import PageHeader from '../components/PageHeader.svelte'
   import MessageDialog from './MessageDialog.svelte'
+  import SimulateDialog from './SimulateDialog.svelte'
 
   let detail: MessageDialog
+  let simulator: SimulateDialog
 
   async function clear(): Promise<void> {
     const dev = app.deviceFilter
@@ -33,6 +35,7 @@
         <option value={d.id}>{d.id}{d.name ? ` (${d.name})` : ''}</option>
       {/each}
     </select>
+    <button onclick={() => simulator.open()}>{t('msg.simulate')}</button>
     <a class="button" href={api.messagesCsvUrl(app.deviceFilter)} download>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3L5 7M3 13h10" /></svg>CSV
     </a>
@@ -56,7 +59,7 @@
             <td>{m.seq}</td>
             <td class="data">{spaced(m.data)}{#if m.decoded}<span class="decoded">{decodedText(m.decoded)}</span>{/if}</td>
             <td>{m.rssi} dBm</td>
-            <td>{m.nbFrames}/3</td>
+            <td>{#if m.simulated}<span class="badge neutral soft">{t('msg.simulated')}</span>{:else}{m.nbFrames}/3{/if}</td>
             <td><Badge badge={authBadge(m.auth)} /></td>
             <!-- データはバッジの下の段に置き、列の幅を広げない -->
             <td>
@@ -77,3 +80,4 @@
 {#if app.hasMore}<button id="msg-more" onclick={() => app.loadMessages(true)}>{t('msg.more')}</button>{/if}
 
 <MessageDialog bind:this={detail} />
+<SimulateDialog bind:this={simulator} />
