@@ -182,13 +182,8 @@ fn csv_cell(v: &Value) -> String {
 }
 
 async fn messages_csv(State(host): Shared, Query(q): Query<HashMap<String, String>>) -> Result<Response, ApiError> {
-    let query = MessageQuery {
-        device_id: device_param(&q),
-        before: None,
-        limit: Some(1000),
-    };
     let mut lines = vec![CSV_COLUMNS.join(",")];
-    for m in host.engine.store().list_messages(&query)? {
+    for m in host.engine.store().export_messages(device_param(&q).as_deref())? {
         let row = serde_json::to_value(&m).unwrap_or_default();
         let time = chrono::DateTime::from_timestamp_millis(m.fields.time).unwrap_or_default();
         let cells = CSV_COLUMNS.map(|k| match k {

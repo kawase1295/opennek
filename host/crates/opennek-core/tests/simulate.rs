@@ -391,5 +391,5 @@ async fn simulated_messages_are_marked_in_the_list_and_the_csv() {
     let csv = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
     let lines: Vec<&str> = csv.lines().collect();
     assert!(lines[0].ends_with(",downlinkStatus,simulated"), "{csv}");
-    assert!(lines[1].ends_with(",true") && lines[2].ends_with(",false"), "{csv}");
+    assert!(lines[1].ends_with(",false") && lines[2].ends_with(",true"), "{csv}");
 }

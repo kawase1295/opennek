@@ -67,8 +67,6 @@ taken from the response of a callback marked for downlinks, in either of these f
 
 A `204 No Content` response means no downlink is sent.
 
----
-
 ## Simulated uplinks
 
 `POST /api/uplinks` makes up an uplink and handles it like one from the receiver, with or without a receiver.
@@ -100,3 +98,9 @@ a DATA BIDIR callback) and puts it on the message. It never transmits the downli
 Send the body as JSON with `Content-Type: application/json`. A field with an invalid value gets `400 Bad Request`
 with `{"error": "<field>: <what is expected>"}`. Give `seq` when you send uplinks of one device at the same time,
 because two uplinks without `seq` can get the same number.
+
+## CSV export
+
+The **CSV** button on the **Messages** tab downloads `GET /api/messages.csv`. The file holds every stored message,
+oldest first. The host keeps the newest 10,000 messages. When you choose a device in the device list on the same tab,
+the file holds only that device's messages.
