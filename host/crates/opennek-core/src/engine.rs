@@ -11,7 +11,7 @@ use sigfox::downlink::{downlink_frequency, downlink_window, encode_downlink};
 use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
-use crate::acknowledge::DownlinkOutcome;
+use crate::acknowledge::{DownlinkOutcome, acknowledge_vars};
 use crate::callbacks::{CallbackResult, applies_to, callback_vars, run_callback};
 use crate::console::{CONSOLE_LINES, ConsoleBuffer, ConsoleLine, radio_line};
 use crate::downlink::{DownlinkContext, render_downlink};
@@ -20,7 +20,7 @@ use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitte
 use crate::rtlsdr::is_rtlsdr;
 use crate::store::{
     Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage,
-    ReceiverPort, Store,
+    ReceiverPort, Store, Trigger,
 };
 
 /// The receiver merges repetitions until 10 s after the last one; a repetition later than that is ignored for this long
@@ -259,11 +259,20 @@ impl Engine {
             self.store
                 .list_callbacks()?
                 .into_iter()
-                .filter(|c| c.input.enabled && c.input.is_sent() && applies_to(c, &message.fields.device_id))
+                .filter(|c| c.input.enabled && applies_to(c, &message.fields.device_id))
                 .collect()
         } else {
             vec![]
         };
+        // ACKNOWLEDGE callbacks tell what became of the downlink an uplink asked for
+        let (mut on_uplink, mut on_downlink) = (vec![], vec![]);
+        for c in callbacks {
+            match c.input.trigger() {
+                Some(Trigger::Uplink) => on_uplink.push(c),
+                Some(Trigger::Downlink) if m.downlink => on_downlink.push(c),
+                _ => {}
+            }
+        }
         // A device confirms a downlink it received with a control message at the next counter
         if confirmation && auth != Auth::Bad {
             self.confirm_downlink(&message.fields.device_id, m.counter)?;
@@ -272,13 +281,13 @@ impl Engine {
         let transmitter = self
             .transmitter()
             .filter(|_| message.fields.ack && settings.sigfox_downlink);
-        let waits = !callbacks.is_empty() || transmitter.is_some();
+        let waits = !on_uplink.is_empty() || !on_downlink.is_empty() || transmitter.is_some();
         let uplink = Uplink {
             transmitter,
             device,
             auth,
             trusted,
-            bidir_chosen: callbacks.iter().any(|c| c.input.downlink),
+            bidir_chosen: on_uplink.iter().any(|c| c.input.downlink),
             device_id: m.device_id,
             first_frame_end_at: r.first_frame_end_at,
             uplink_freq_hz: r.uplink_freq_hz,
@@ -286,9 +295,14 @@ impl Engine {
         let engine = self.clone();
         let finish = move || {
             let name = uplink.device.as_ref().map(|d| d.name.clone()).unwrap_or_default();
+            let timeout_ms = settings.downlink_timeout_ms;
             let vars = |cb: &Callback| callback_vars(cb, &message, &name);
-            let results = engine.run_callbacks(&callbacks, message.id, vars, settings.downlink_timeout_ms);
-            engine.settle_downlink(&message, &uplink, &results);
+            let results = engine.run_callbacks(&on_uplink, message.id, vars, timeout_ms);
+            // Once, for what the station did: the device's later confirmation of the downlink sends none
+            if let Some(outcome) = engine.settle_downlink(&message, &uplink, &results) {
+                let vars = acknowledge_vars(&message, outcome);
+                engine.run_callbacks(&on_downlink, message.id, |_| vars.clone(), timeout_ms);
+            }
         };
         // Callbacks wait for the user's server and a downlink for the device's receive window, neither of which may
         // hold up the receiver

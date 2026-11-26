@@ -486,7 +486,7 @@ async fn a_callback_id_that_is_not_a_number_is_not_found() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn only_data_callbacks_to_a_url_are_sent() {
+async fn service_status_and_email_callbacks_are_not_sent() {
     let (url, hits) = user_server(204, "", Duration::ZERO).await;
     let store = Store::open_in_memory().unwrap();
     let uplink_cb = store.create_callback(&callback(&format!("{url}/up"), "{}")).unwrap();
@@ -559,6 +559,38 @@ async fn callbacks_opennek_does_not_send_cannot_be_tried() {
     let (status, err) = api(&host, "POST", "/api/callbacks/1/test", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(err["error"].as_str().unwrap().contains("not sent"), "{err}");
+    let status_cb = json!({ "callbackType": "SERVICE", "callbackSubtype": "STATUS", "url": "http://127.0.0.1:9/" });
+    let (_, created) = api(&host, "POST", "/api/callbacks", Some(status_cb)).await;
+    let path = format!("/api/callbacks/{}/test", created["id"]);
+    assert_eq!(api(&host, "POST", &path, None).await.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_acknowledge_callback_is_tried_as_if_the_downlink_had_been_sent() {
+    let (url, hits) = user_server(204, "", Duration::ZERO).await;
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    let ack = json!({
+        "callbackType": "SERVICE", "callbackSubtype": "ACKNOWLEDGE", "url": format!("{url}/ack"),
+        "bodyTemplate": r#"{"device":"{device}","time":{time},"infoCode":{infoCode},"infoMessage":"{infoMessage}","downlinkAck":{downlinkAck},"downlinkOverusage":{downlinkOverusage}}"#,
+    });
+    let (status, created) = api(&host, "POST", "/api/callbacks", Some(ack)).await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let (status, tried) = api(&host, "POST", "/api/callbacks/1/test", None).await;
+    assert_eq!(status, StatusCode::OK, "{tried}");
+    assert_eq!(
+        (tried["result"]["ok"].clone(), tried["result"]["status"].clone()),
+        (json!(true), json!(204))
+    );
+    let body: Value = serde_json::from_str(&hits.lock().unwrap()[0].body).unwrap();
+    assert_eq!(
+        body,
+        json!({
+            "device": "F0000001", "time": tried["message"]["time"].as_i64().unwrap() / 1000, "infoCode": 0,
+            "infoMessage": "Acked: the downlink was transmitted", "downlinkAck": true, "downlinkOverusage": false,
+        })
+    );
+    // a test is not logged
+    assert!(host.engine.store().list_logs(None, None, None).unwrap().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]
