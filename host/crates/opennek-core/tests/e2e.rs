@@ -7,7 +7,7 @@ use axum::http::{Request, StatusCode};
 use common::{FakeStreamer, eventually, fixture, streamer_lines};
 use http_body_util::BodyExt;
 use opennek_core::host::Host;
-use opennek_core::store::{ReceiverPort, Store};
+use opennek_core::store::{Auth, DownlinkStatus, NewMessage, ReceiverPort, Store};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -273,6 +273,58 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     let (status, _) = send(&host, "DELETE", "/api/devices/00763da3", None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(get_json(&host, "/api/devices").await, json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_csv_has_every_stored_message_oldest_first() {
+    let host = Host::new(Store::open_in_memory().unwrap(), Box::new(FakeStreamer::default()));
+    // more than the JSON list's 1000, for the whole store and for the filtered device
+    for seq in 0..1800u16 {
+        let message = NewMessage {
+            device_id: if seq % 3 == 0 { "0A1B2C3D" } else { "00763DA3" }.into(),
+            time: 1_700_000_000_000 + i64::from(seq) * 1000,
+            seq,
+            data: "11".into(),
+            ack: false,
+            oob: false,
+            rssi: -80,
+            nb_frames: 3,
+            auth: Auth::Unverified,
+            station: "0000".into(),
+            decoded: Some(json!({ "v": 1, "w": "a,b" })),
+            downlink: None,
+            downlink_status: DownlinkStatus::None,
+        };
+        host.engine.store().insert_message(&message).unwrap();
+    }
+    let ids = |csv: &str| -> Vec<i64> {
+        csv.lines()
+            .skip(1)
+            .map(|l| l.split(',').next().unwrap().parse().unwrap())
+            .collect()
+    };
+
+    let (status, content_type, csv) = get(&host, "/api/messages.csv").await;
+    assert_eq!(
+        (status, content_type.as_str()),
+        (StatusCode::OK, "text/csv; charset=utf-8")
+    );
+    let lines: Vec<&str> = csv.lines().collect();
+    assert_eq!(
+        lines[..2],
+        [
+            "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus",
+            r#"1,2023-11-14T22:13:20.000Z,0A1B2C3D,0,11,"{""v"":1,""w"":""a,b""}",false,false,-80,3,unverified,,none"#,
+        ]
+    );
+    assert_eq!(ids(&csv), (1..=1800).collect::<Vec<_>>());
+
+    let (_, _, csv) = get(&host, "/api/messages.csv?device=00763da3").await;
+    assert_eq!(ids(&csv), (1..=1800).filter(|id| id % 3 != 1).collect::<Vec<_>>());
+    assert!(csv.lines().skip(1).all(|l| l.split(',').nth(2) == Some("00763DA3")));
+
+    let list = get_json(&host, "/api/messages?limit=5000").await;
+    assert_eq!(list.as_array().unwrap().len(), 1000);
 }
 
 #[tokio::test(flavor = "multi_thread")]
