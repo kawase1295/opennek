@@ -253,12 +253,13 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     let lines: Vec<&str> = csv.lines().collect();
     assert_eq!(
         lines[0],
-        "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus"
+        "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus,simulated"
     );
     assert_eq!(lines.len(), 4);
     let cells: Vec<&str> = lines[1].splitn(6, ',').collect();
     assert_eq!(cells[2..5], ["00763DA3", "1979", "11"]);
     assert!(cells[1].ends_with('Z') && cells[1].len() == 24, "{}", cells[1]);
+    assert!(lines[1].ends_with(",false"), "{}", lines[1]);
     assert!(
         cells[5].starts_with(r#""{""v"":1,""w"":1}",false,false,"#),
         "{}",
@@ -294,6 +295,7 @@ async fn the_csv_has_every_stored_message_oldest_first() {
             decoded: Some(json!({ "v": 1, "w": "a,b" })),
             downlink: None,
             downlink_status: DownlinkStatus::None,
+            simulated: false,
         };
         host.engine.store().insert_message(&message).unwrap();
     }
@@ -313,8 +315,8 @@ async fn the_csv_has_every_stored_message_oldest_first() {
     assert_eq!(
         lines[..2],
         [
-            "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus",
-            r#"1,2023-11-14T22:13:20.000Z,0A1B2C3D,0,11,"{""v"":1,""w"":""a,b""}",false,false,-80,3,unverified,,none"#,
+            "id,time,deviceId,seq,data,decoded,ack,oob,rssi,nbFrames,auth,downlink,downlinkStatus,simulated",
+            r#"1,2023-11-14T22:13:20.000Z,0A1B2C3D,0,11,"{""v"":1,""w"":""a,b""}",false,false,-80,3,unverified,,none,false"#,
         ]
     );
     assert_eq!(ids(&csv), (1..=1800).collect::<Vec<_>>());

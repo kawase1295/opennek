@@ -21,6 +21,7 @@ const DL_TONE: Record<Exclude<DownlinkStatus, 'none'>, Tone> = {
   failed: 'bad',
   nodata: 'neutral',
   unsupported: 'neutral',
+  simulated: 'neutral',
 }
 
 export function authBadge(auth: Auth): Badge {

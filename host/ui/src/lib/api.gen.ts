@@ -187,7 +187,7 @@ devices: string, };
 
 export type Auth = "ok" | "bad" | "public" | "unverified";
 
-export type DownlinkStatus = "none" | "pending" | "sent" | "acked" | "failed" | "nodata" | "unsupported";
+export type DownlinkStatus = "none" | "pending" | "sent" | "acked" | "failed" | "nodata" | "unsupported" | "simulated";
 
 export type Message = { id: number, deviceId: string, 
 /**
@@ -205,7 +205,11 @@ ack: boolean,
 /**
  * A control message (keep-alive, downlink confirmation)
  */
-oob: boolean, rssi: number, nbFrames: number, auth: Auth, station: string, decoded: Record<string, unknown> | null, downlink: string | null, downlinkStatus: DownlinkStatus, };
+oob: boolean, rssi: number, nbFrames: number, auth: Auth, station: string, decoded: Record<string, unknown> | null, downlink: string | null, downlinkStatus: DownlinkStatus, 
+/**
+ * Made up from the web UI or the API (POST /api/uplinks), not received
+ */
+simulated: boolean, };
 
 export type CallbackLog = { id: number, callbackId: number, messageId: number, time: number, status: number | null, ok: boolean, error: string | null, durationMs: number, response: string | null, };
 

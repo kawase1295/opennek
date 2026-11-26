@@ -86,9 +86,13 @@ callback's history. It has only the variables of the Sigfox Backend's ACKNOWLEDG
 The host decides the outcome in this order: the downlink data, the key to sign it with, the transmitter, the timing,
 then the radio. An uplink without downlink data therefore gets `1` even on a host that only receives.
 
+A simulated uplink gets `0`, as if a station had sent its downlink, so an app can try its whole downlink flow
+without a receiver. Its `{infoMessage}` and the message's status `simulated` say that nothing went on air.
+
 | Outcome | `{infoCode}` | `{infoMessage}` | `{downlinkAck}` | Downlink status |
 |---|---|---|---|---|
 | Transmitted in the device's receive window | `0` | `Acked: the downlink was transmitted` | `true` | `sent` |
+| The uplink was simulated (**Simulate uplink**, `POST /api/uplinks`): the data is resolved and nothing is transmitted | `0` | `Acked (simulated): the uplink was simulated, so nothing was transmitted` | `true` | `simulated` |
 | No downlink data: mode `none`, empty static data, or no chosen BIDIR callback answered with `downlinkData` (a `204`, an HTTP error or a timeout included) | `1` | `No answer: no downlink data was given` | `false` | `nodata` |
 | `downlinkData` that is not 8 bytes of hex | `2` | `Invalid payload: the downlink data is not 8 bytes of hex` | `false` | `nodata` |
 | Mode `callback`, but no enabled DATA BIDIR callback chosen for downlink applies to the device | `8` | `Invalid configuration: the device takes its downlink from a callback, but no DATA BIDIR callback is chosen for downlink` | `false` | `nodata` |
@@ -106,6 +110,40 @@ also when it could not be sent.
 As in the Backend, the callback reports what the station did, once. The device's later confirmation of the downlink
 (status `acked`) sends no second ACKNOWLEDGE callback. **Send test** sends it as if the latest message's downlink had
 been transmitted (`{infoCode}` `0`).
+
+## Simulated uplinks
+
+`POST /api/uplinks` makes up an uplink and handles it like one from the receiver, with or without a receiver.
+The host signs the frame with the device's registered key, or with the public key when no key is registered.
+It then stores the message, shows it in the web UI and runs the DATA callbacks with the variables above.
+
+| Field | Required | Contents |
+|---|---|---|
+| `device` | yes | device ID (8 hex digits). An unknown device is added, as on reception |
+| `data` | yes | payload (hex, 0 to 12 bytes) |
+| `ack` | no | downlink requested, `true` / `false` (default `false`) |
+| `seq` | no | sequence number, 0 to 4095. Default: the device's last plus one, 0 after 4095 and for a new device |
+| `rssi` | no | RSSI in dBm, -200 to 0 (default `-100`) |
+| `key` | no | key to sign with instead (32 hex digits). For a registered device, another key shows a key mismatch and no callbacks run. For a device without a key, a key other than the public key shows unverified |
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks \
+  -H 'Content-Type: application/json' \
+  -d '{"device":"0A1B2C3D","data":"0102","ack":true}'
+```
+
+The host answers `201 Created` with the stored message after the callbacks have answered. The message has
+`"simulated": true`, and so has its row in the CSV.
+
+With `ack: true`, the host resolves the downlink data the device would get (its static data or the `downlinkData` of
+a DATA BIDIR callback) and puts it on the message. It never transmits the downlink, even with downlinks turned on.
+`downlinkStatus` is `simulated`, or `nodata` when there is no data or the uplink failed authentication.
+SERVICE ACKNOWLEDGE callbacks then run before the host answers, with the `{infoCode}` of
+[SERVICE ACKNOWLEDGE](#service-acknowledge).
+
+Send the body as JSON with `Content-Type: application/json`. A field with an invalid value gets `400 Bad Request`
+with `{"error": "<field>: <what is expected>"}`. Give `seq` when you send uplinks of one device at the same time,
+because two uplinks without `seq` can get the same number.
 
 ## CSV export
 

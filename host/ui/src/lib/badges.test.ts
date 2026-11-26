@@ -9,7 +9,7 @@ test('badges follow the language chosen after the module is loaded', () => {
   expect(authBadge('bad').label).toBe(STRINGS.ja['auth.bad'])
   expect(authBadge('public').label).toBe(STRINGS.ja['auth.public'])
   expect(authBadge('unverified').label).toBe(STRINGS.ja['auth.unverified'])
-  for (const s of ['pending', 'sent', 'acked', 'failed', 'nodata', 'unsupported'] as const) {
+  for (const s of ['pending', 'sent', 'acked', 'failed', 'nodata', 'unsupported', 'simulated'] as const) {
     expect(dlBadge(s)?.label, s).toBe(STRINGS.ja[`dl.${s}`])
   }
 })
@@ -28,6 +28,7 @@ test('downlinks show their state with a dot', () => {
   expect(dlBadge('failed')?.tone).toBe('bad')
   expect(dlBadge('nodata')?.tone).toBe('neutral')
   expect(dlBadge('unsupported')?.tone).toBe('neutral')
+  expect(dlBadge('simulated')).toEqual({ tone: 'neutral', look: 'dot', label: 'Not sent (simulated)' })
 })
 
 test('no badge when no downlink was asked for', () => {

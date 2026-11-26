@@ -27,6 +27,8 @@ pub enum DownlinkOutcome {
     WindowClosed,
     /// The transmitter did not send it
     Refused,
+    /// The uplink was simulated: the data is resolved, and nothing is transmitted
+    Simulated,
 }
 
 /// One row of the table: the Backend's infoCode, infoMessage and downlinkAck, and the status stored on the message
@@ -85,6 +87,12 @@ impl DownlinkOutcome {
                 "Network error: not transmitted, the transmitter did not send it",
                 false,
                 DownlinkStatus::Failed,
+            ),
+            Simulated => (
+                0,
+                "Acked (simulated): the uplink was simulated, so nothing was transmitted",
+                true,
+                DownlinkStatus::Simulated,
             ),
             NoBidirCallback => (
                 8,

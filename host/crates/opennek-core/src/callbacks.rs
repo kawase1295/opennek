@@ -188,6 +188,7 @@ pub fn dummy_message(ack: bool) -> Message {
             decoded: None,
             downlink: None,
             downlink_status: DownlinkStatus::None,
+            simulated: false,
         },
     }
 }

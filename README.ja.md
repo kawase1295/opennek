@@ -168,6 +168,20 @@ OpenNEK が送るのは DATA と SERVICE ACKNOWLEDGE を URL へのコールバ�
 - **テスト送信** ボタンを押すと、直近のメッセージを使ってコールバックを試せます（履歴には残りません）。
   一覧に各コールバックの直近の結果が出て、そこから履歴を開けます。
 
+### デバイスなしでコールバックを試す
+
+デバイスや受信機が手元になくても、コールバックとサーバーを試せます。OpenNEK を起動します（受信機をつないでいなければ
+`--sigfox off` を付けます）。**メッセージ** タブで **模擬アップリンク** を選び、デバイス ID とデータを入れて送ります。
+OpenNEK はデバイスの鍵でアップリンクに署名し、受信したものと同じように扱います。一覧には模擬と印を付けて表示し、
+DATA コールバックは同じ変数で実行します。ダウンリンクを要求したときは、デバイスが受け取るはずのデータをメッセージに
+表示しますが、送信はしません。
+
+アプリのテストからは `POST /api/uplinks` で同じアップリンクを送れます（[docs/protocol.ja.md](docs/protocol.ja.md#模擬アップリンク)）。
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks -H 'Content-Type: application/json' -d '{"device":"0A1B2C3D","data":"0102"}'
+```
+
 ## WSL2 で使う場合
 
 Windows では上の手順どおり Windows 上で直接動かすのがいちばん簡単です。WSL の中で動かす場合、WSL には USB がそのままでは見えません。Windows 側で [usbipd-win](https://github.com/dorssel/usbipd-win) を使い、

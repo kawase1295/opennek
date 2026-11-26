@@ -9,6 +9,7 @@ use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::routing::any;
 use opennek_core::engine::{Engine, Event};
 use opennek_core::radio::{DownlinkTx, RadioEvent, RadioMessage, Transmitter, now_ms};
+use opennek_core::simulate::UplinkInput;
 use opennek_core::store::{CallbackInput, DeviceInput, DownlinkStatus, Message, MessageQuery, Store};
 use serde_json::{Value, json};
 use sigfox::auth::{PUBLIC_KEY, uplink_auth};
@@ -376,14 +377,49 @@ async fn each_outcome_of_a_downlink_is_acknowledged_with_its_info_code() {
             code == 0,
             status.as_str().unwrap()
         );
-        for doc in ["protocol.md", "protocol.ja.md"] {
-            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/").to_string() + doc;
-            assert!(
-                std::fs::read_to_string(path).unwrap().contains(&row),
-                "{doc} has no row {row}"
-            );
-        }
+        assert_documented(&row);
     }
+}
+
+/// The protocol docs have the same row
+fn assert_documented(row: &str) {
+    for doc in ["protocol.md", "protocol.ja.md"] {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/").to_string() + doc;
+        assert!(
+            std::fs::read_to_string(path).unwrap().contains(row),
+            "{doc} has no row {row}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_simulated_uplink_is_acknowledged_as_acked_without_a_transmission() {
+    let s = Setup::new(Case::default()).await;
+    let input = UplinkInput::parse(json!({ "device": "0A1B2C3D", "data": "0102", "ack": true, "seq": 42 })).unwrap();
+    let engine = s.engine.clone();
+    let m = tokio::task::spawn_blocking(move || engine.simulate(&input))
+        .await
+        .unwrap()
+        .unwrap();
+    // simulate answers once the ACKNOWLEDGE callback has been sent
+    let hit = s
+        .acks()
+        .pop()
+        .expect("an ACKNOWLEDGE callback before simulate answered");
+    let info = "Acked (simulated): the uplink was simulated, so nothing was transmitted";
+    assert_eq!(
+        serde_json::from_str::<Value>(&hit.body).unwrap(),
+        json!({
+            "device": "0A1B2C3D", "time": m.fields.time / 1000, "infoCode": 0, "infoMessage": info,
+            "downlinkAck": true, "downlinkOverusage": false,
+        })
+    );
+    assert_eq!(
+        (m.fields.downlink_status, m.fields.downlink.as_deref()),
+        (DownlinkStatus::Simulated, Some("0102030405060708"))
+    );
+    assert!(s.tx.sent.lock().unwrap().is_empty());
+    assert_documented(&format!("| `0` | `{info}` | `true` | `simulated` |"));
 }
 
 #[tokio::test(flavor = "multi_thread")]

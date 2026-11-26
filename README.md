@@ -178,6 +178,21 @@ The url pattern, headers and body support the same variables as Sigfox custom ca
 - The **Send test** button fires the callback with the latest message (not recorded in the history). Each callback's
   last answer is in the list, and its history behind it.
 
+### Trying callbacks without a device
+
+You can try your callbacks and your server before a device or a receiver is at hand. Start OpenNEK, with
+`--sigfox off` when no receiver is plugged in. On the **Messages** tab, choose **Simulate uplink**, enter a device ID
+and the data, and send. OpenNEK signs the uplink with the device's key and handles it like a received one. It shows
+up in the list marked as simulated, and the DATA callbacks run with the same variables. When the uplink requests a
+downlink, the message shows the downlink data the device would get, but OpenNEK does not transmit it.
+
+Your application's tests can send the same uplinks with `POST /api/uplinks`, described in
+[docs/protocol.md](docs/protocol.md#simulated-uplinks):
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks -H 'Content-Type: application/json' -d '{"device":"0A1B2C3D","data":"0102"}'
+```
+
 ## Using it on WSL2
 
 On Windows, running OpenNEK natively (above) is the simplest. To run it inside WSL instead: WSL cannot see USB devices by default. Use [usbipd-win](https://github.com/dorssel/usbipd-win) on Windows
