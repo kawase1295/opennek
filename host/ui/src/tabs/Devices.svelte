@@ -8,6 +8,7 @@
   import EmptyState from '../components/EmptyState.svelte'
   import PageHeader from '../components/PageHeader.svelte'
   import DeviceDialog from './DeviceDialog.svelte'
+  import LinkQuality from './devices/LinkQuality.svelte'
 
   let editor: DeviceDialog
 
@@ -18,6 +19,9 @@
   }
 </script>
 
+{#if app.deviceLink}
+  <LinkQuality id={app.deviceLink.id} stats={app.deviceLink.stats} />
+{:else}
 <PageHeader title={t('nav.devices')} count={app.devices.length} intro={t('dev.intro')}>
   {#snippet actions()}
     <button class="primary" onclick={() => editor.open(null)}>{t('common.add')}</button>
@@ -25,7 +29,7 @@
 </PageHeader>
 <div class="table-wrap">
   {#if app.devices.length}
-  <table>
+  <table id="dev-table">
     <thead>
       <tr>
         <th>ID</th><th>{t('dev.name')}</th><th>{t('dev.key')}</th><th>{t('dev.downlink')}</th>
@@ -34,8 +38,9 @@
     </thead>
     <tbody>
       {#each app.devices as d (d.id)}
-        <tr>
-          <td class="mono">{d.id}</td>
+        <tr onclick={() => app.openLink(d.id)}>
+          <!-- ID はキーボードで開くためのボタン。クリックは行が受ける -->
+          <td><button class="link mono" title={t('link.show')}>{d.id}</button></td>
           <td>{#if d.name}{d.name}{:else}<span class="muted">—</span>{/if}</td>
           <td>
             {#if d.key}<span class="badge ok dot">{t('dev.registered')}</span>
@@ -49,8 +54,8 @@
           <td>{d.lastSeq ?? '—'}</td>
           <td>
             <div class="actions">
-              <button class="small" onclick={() => editor.open(d)}>{t('common.edit')}</button>
-              <button class="small danger" onclick={() => remove(d)}>{t('common.delete')}</button>
+              <button class="small" onclick={(e) => { e.stopPropagation(); editor.open(d) }}>{t('common.edit')}</button>
+              <button class="small danger" onclick={(e) => { e.stopPropagation(); void remove(d) }}>{t('common.delete')}</button>
             </div>
           </td>
         </tr>
@@ -61,5 +66,6 @@
     <EmptyState title={t('dev.empty')} />
   {/if}
 </div>
+{/if}
 
 <DeviceDialog bind:this={editor} />

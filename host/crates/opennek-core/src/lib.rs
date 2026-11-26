@@ -9,6 +9,7 @@ pub mod downlink;
 pub mod engine;
 pub mod host;
 pub mod instance;
+pub mod link;
 pub mod logfile;
 pub mod payload;
 pub mod platform;

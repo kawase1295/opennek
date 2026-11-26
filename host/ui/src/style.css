@@ -340,8 +340,8 @@ th {
 }
 td { height: var(--row); padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; font-variant-numeric: tabular-nums; }
 tbody tr:last-child td { border-bottom: none; }
-#msg-table tbody tr { cursor: pointer; transition: background 0.1s; }
-#msg-table tbody tr:hover { background: var(--surface-2); }
+#msg-table tbody tr, #dev-table tbody tr { cursor: pointer; transition: background 0.1s; }
+#msg-table tbody tr:hover, #dev-table tbody tr:hover { background: var(--surface-2); }
 tr.new { animation: flash 1.5s ease-out; }
 @keyframes flash { from { background: var(--row-new); } to { background: transparent; } }
 td.data { font-family: var(--font-mono); font-size: var(--text-xs); }
@@ -511,3 +511,31 @@ input.radio { border-radius: 50%; }
 .callback-form .note { display: flex; flex-direction: column; gap: 6px; font-size: var(--text-sm); color: var(--fg-2); }
 .callback-form .note strong { color: var(--fg); }
 .callback-form .note.warn { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: color-mix(in srgb, var(--warn-soft) 60%, var(--surface)); }
+
+/* ---------------- 通信品質 */
+button.link { height: auto; padding: 0; border: 0; background: none; box-shadow: none; color: var(--accent); }
+button.link:hover { background: none; text-decoration: underline; }
+.link-tiles { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.tile { display: flex; flex-direction: column; gap: 2px; }
+.tile > span { font-size: var(--text-xs); color: var(--fg-2); }
+.tile strong { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.tile small { font-size: var(--text-xs); color: var(--fg-3); }
+.link-chart { display: flex; flex-direction: column; gap: var(--space-3); }
+.link-chart .head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.link-chart h3 { font-size: var(--text-md); font-weight: 600; }
+.link-chart .legend { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.link-chart .legend i { width: 16px; border-top: 1.5px dashed var(--fg-2); }
+.rssi-chart { height: 200px; }
+.rssi-chart svg { display: block; overflow: visible; }
+.rssi-chart text { fill: var(--fg-3); font: 11px var(--font-sans); font-variant-numeric: tabular-nums; }
+.rssi-chart .grid { stroke: var(--line); }
+.rssi-chart .avg { stroke: var(--fg-2); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.rssi-chart .dots { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+.link-bars { display: grid; grid-template-columns: max-content minmax(48px, 1fr) auto auto; gap: var(--space-2) var(--space-3); align-items: center; font-size: var(--text-sm); }
+.link-bars.counts { grid-template-columns: max-content minmax(48px, 1fr) auto; }
+.link-bars .track { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.link-bars .track i { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.link-bars .track i.ok { background: var(--ok); }
+.link-bars .track i.bad { background: var(--bad); }
+.link-bars .track i.neutral { background: var(--fg-3); }
+.link-bars .num { text-align: right; }
