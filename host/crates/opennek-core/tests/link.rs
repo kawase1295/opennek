@@ -75,10 +75,11 @@ fn uplink(device_id: &str, seq: u16, time: i64, rssi: i32, nb_frames: u32, auth:
         decoded: None,
         downlink: None,
         downlink_status: DownlinkStatus::None,
+        simulated: false,
     }
 }
 
-// 00763DA3: seq 10, 11, 14 and 15 (12 and 13 missed); 0A1B2C3D: one message in between
+// 00763DA3: seq 10, 11, 14 and 15 (12 and 13 missed), then a simulated uplink; 0A1B2C3D: one message in between
 fn store_with_uplinks() -> Store {
     let store = Store::open_in_memory().unwrap();
     for m in [
@@ -87,6 +88,10 @@ fn store_with_uplinks() -> Store {
         uplink("00763DA3", 11, 2000, -100, 2, Auth::Bad),
         uplink("00763DA3", 14, 3000, -110, 1, Auth::Public),
         uplink("00763DA3", 15, 4000, -81, 3, Auth::Unverified),
+        NewMessage {
+            simulated: true,
+            ..uplink("00763DA3", 20, 5000, -20, 3, Auth::Ok)
+        },
     ] {
         store.insert_message(&m).unwrap();
     }
@@ -94,9 +99,15 @@ fn store_with_uplinks() -> Store {
 }
 
 #[test]
-fn a_device_without_messages_has_no_link_stats() {
+fn a_device_without_received_messages_has_no_link_stats() {
     let store = store_with_uplinks();
     assert_eq!(store.link_stats("FFFFFFFF").unwrap(), None);
+    let simulated = NewMessage {
+        simulated: true,
+        ..uplink("0C0FFEE0", 1, 1000, -80, 3, Auth::Ok)
+    };
+    store.insert_message(&simulated).unwrap();
+    assert_eq!(store.link_stats("0C0FFEE0").unwrap(), None);
     store.clear_messages(Some("00763DA3")).unwrap();
     assert_eq!(store.link_stats("00763DA3").unwrap(), None);
 }

@@ -47,7 +47,11 @@ fn extract_downlink_accepts_sigfox_style_and_flat_responses() {
         extract_downlink(r#"{"downlinkData":"AABBCCDDEEFF0011"}"#, "0A1B2C3D").as_deref(),
         Some("aabbccddeeff0011")
     );
-    assert_eq!(extract_downlink(r#"{"downlinkData":"0102"}"#, "0A1B2C3D"), None);
+    assert_eq!(
+        extract_downlink(r#"{"downlinkData":"0102"}"#, "0A1B2C3D").as_deref(),
+        Some("0102")
+    );
+    assert_eq!(extract_downlink(r#"{"downlinkData":null}"#, "0A1B2C3D"), None);
     assert_eq!(extract_downlink("not json", "0A1B2C3D"), None);
 }
 

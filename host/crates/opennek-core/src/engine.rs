@@ -11,15 +11,17 @@ use sigfox::downlink::{downlink_frequency, downlink_window, encode_downlink};
 use sigfox::frame::{ControlKind, DeviceId, decode_control};
 use tokio::sync::broadcast;
 
-use crate::callbacks::{CallbackResult, applies_to, run_callback};
+use crate::acknowledge::{DownlinkOutcome, acknowledge_vars};
+use crate::callbacks::{CallbackResult, applies_to, callback_vars, run_callback};
 use crate::console::{CONSOLE_LINES, ConsoleBuffer, ConsoleLine, radio_line};
 use crate::downlink::{DownlinkContext, render_downlink};
 use crate::payload::decode_payload;
 use crate::radio::{DownlinkTx, RadioEvent, RadioMessage, RadioStatus, Transmitter, now_ms};
 use crate::rtlsdr::is_rtlsdr;
+use crate::simulate::{UplinkInput, radio_message};
 use crate::store::{
     Auth, Callback, CallbackLog, Device, DownlinkStatus, Message, MessageQuery, NewCallbackLog, NewMessage,
-    ReceiverPort, Store,
+    ReceiverPort, Store, Trigger,
 };
 
 /// The receiver merges repetitions until 10 s after the last one; a repetition later than that is ignored for this long
@@ -63,13 +65,20 @@ pub struct Engine {
     radio_line: Mutex<String>,
 }
 
+enum Tx {
+    ReceiveOnly,
+    Simulated,
+    Transmit(Arc<dyn Transmitter>),
+}
+
 /// What a downlink needs to know about the uplink it answers
 struct Uplink {
-    /// None when receiving only: no transmitter, or transmitting off when the uplink came in
-    transmitter: Option<Arc<dyn Transmitter>>,
+    tx: Tx,
     device: Option<Device>,
     auth: Auth,
     trusted: bool,
+    /// A DATA BIDIR callback chosen for downlink ran for it
+    bidir_chosen: bool,
     device_id: DeviceId,
     first_frame_end_at: Option<i64>,
     uplink_freq_hz: Option<u32>,
@@ -189,8 +198,32 @@ impl Engine {
                 return Ok(());
             }
         }
+        self.accept(r, false).map(drop)
+    }
+
+    /// Handles a made-up uplink like a received one, signed with `input.key`, else the device's key, else the public
+    /// key. Its downlink is resolved but never sent. It returns once the callbacks have answered, with the message as
+    /// they and the downlink left it
+    pub fn simulate(self: &Arc<Self>, input: &UplinkInput) -> crate::store::Result<Message> {
+        let device = self.store.get_device(&input.device_id.to_string())?;
+        let seq = input.seq.unwrap_or_else(|| {
+            device
+                .as_ref()
+                .and_then(|d| d.last_seq)
+                .map_or(0, |last| ((last + 1) & 0xfff) as u16)
+        });
+        let key = input
+            .key
+            .or_else(|| device.as_ref().and_then(|d| parse_hex(&d.key)))
+            .unwrap_or(PUBLIC_KEY);
+        let m = self.accept(&radio_message(input, seq, &key, now_ms()), true)?;
+        Ok(self.store.get_message(m.id)?.unwrap_or(m))
+    }
+
+    fn accept(self: &Arc<Self>, r: &RadioMessage, simulated: bool) -> crate::store::Result<Message> {
+        let m = &r.message;
         let id = m.device_id.to_string();
-        self.store.ensure_device(&id, now)?;
+        self.store.ensure_device(&id, now_ms())?;
         let device = self.store.get_device(&id)?;
         let auth = Self::auth(device.as_ref(), m);
         self.store.touch_device(&id, m.counter, r.received_at)?;
@@ -244,6 +277,7 @@ impl Engine {
             } else {
                 DownlinkStatus::None
             },
+            simulated,
         })?;
         self.emit(Event::Message {
             message: message.clone(),
@@ -256,65 +290,80 @@ impl Engine {
             self.store
                 .list_callbacks()?
                 .into_iter()
-                .filter(|c| c.input.enabled && c.input.is_sent() && applies_to(c, &message.fields.device_id))
+                .filter(|c| c.input.enabled && applies_to(c, &message.fields.device_id))
                 .collect()
         } else {
             vec![]
         };
+        let (mut on_uplink, mut on_downlink) = (vec![], vec![]);
+        for c in callbacks {
+            match c.input.trigger() {
+                Some(Trigger::Uplink) => on_uplink.push(c),
+                Some(Trigger::Downlink) if m.downlink => on_downlink.push(c),
+                _ => {}
+            }
+        }
         // A device confirms a downlink it received with a control message at the next counter
         if confirmation && auth != Auth::Bad {
             self.confirm_downlink(&message.fields.device_id, m.counter)?;
         }
         // Decided once: a transmitter picked up later could run on the receiver's thread
-        let transmitter = self
-            .transmitter()
-            .filter(|_| message.fields.ack && settings.sigfox_downlink);
-        let waits = !callbacks.is_empty() || transmitter.is_some();
+        let tx = match self.transmitter() {
+            _ if simulated => Tx::Simulated,
+            Some(tx) if message.fields.ack && settings.sigfox_downlink => Tx::Transmit(tx),
+            _ => Tx::ReceiveOnly,
+        };
+        let blocks_receiver =
+            !simulated && (!on_uplink.is_empty() || !on_downlink.is_empty() || matches!(tx, Tx::Transmit(_)));
         let uplink = Uplink {
-            transmitter,
+            tx,
             device,
             auth,
             trusted,
+            bidir_chosen: on_uplink.iter().any(|c| c.input.downlink),
             device_id: m.device_id,
             first_frame_end_at: r.first_frame_end_at,
             uplink_freq_hz: r.uplink_freq_hz,
         };
         let engine = self.clone();
+        let stored = message.clone();
         let finish = move || {
             let name = uplink.device.as_ref().map(|d| d.name.clone()).unwrap_or_default();
-            let results = engine.run_callbacks(&callbacks, &message, &name, settings.downlink_timeout_ms);
-            if let Err(e) = engine.settle_downlink(&message, &uplink, &results) {
-                engine.console(format!("error: {e}"));
+            let timeout_ms = settings.downlink_timeout_ms;
+            let vars = |cb: &Callback| callback_vars(cb, &message, &name);
+            let results = engine.run_callbacks(&on_uplink, message.id, vars, timeout_ms);
+            if let Some(outcome) = engine.settle_downlink(&message, &uplink, &results) {
+                let vars = acknowledge_vars(&message, outcome);
+                engine.run_callbacks(&on_downlink, message.id, |_| vars.clone(), timeout_ms);
             }
         };
-        // Callbacks wait for the user's server and a downlink for the device's receive window, neither of which may
-        // hold up the receiver
-        if waits {
+        if blocks_receiver {
             std::thread::spawn(finish);
         } else {
             finish();
         }
-        Ok(())
+        Ok(stored)
     }
 
-    /// All callbacks at once; each answer is logged as it comes
+    /// All callbacks at once, each with its variables; each answer is logged for the message as it comes
     fn run_callbacks(
         &self,
         callbacks: &[Callback],
-        message: &Message,
-        device_name: &str,
+        message_id: i64,
+        vars: impl Fn(&Callback) -> HashMap<String, String> + Sync,
         timeout_ms: u32,
     ) -> Vec<CallbackResult> {
         let (done, answers) = std::sync::mpsc::channel();
+        let vars = &vars;
         std::thread::scope(|s| {
             for cb in callbacks {
                 let done = done.clone();
-                s.spawn(move || done.send((cb.id, run_callback(cb, message, device_name, timeout_ms))));
+                s.spawn(move || done.send((cb.id, run_callback(cb, &vars(cb), timeout_ms))));
             }
             drop(done);
             answers
                 .iter()
-                .map(|(callback_id, r)| self.log_callback(callback_id, message.id, r))
+                .map(|(callback_id, r)| self.log_callback(callback_id, message_id, r))
                 .collect()
         })
     }
@@ -362,24 +411,63 @@ impl Engine {
         }
     }
 
-    /// The downlink data (the device's static template or its callbacks) and the key to sign it with
-    fn settle_downlink(&self, message: &Message, up: &Uplink, results: &[CallbackResult]) -> crate::store::Result<()> {
-        if !message.fields.ack {
-            return Ok(());
-        }
+    /// Settles the downlink an uplink asked for (None when it did not)
+    fn settle_downlink(&self, message: &Message, up: &Uplink, results: &[CallbackResult]) -> Option<DownlinkOutcome> {
         let f = &message.fields;
-        let data = up.device.as_ref().and_then(|d| match d.downlink_mode.as_str() {
+        if !f.ack {
+            return None;
+        }
+        let name = format!("sigfox downlink for {} seq={}", f.device_id, f.seq);
+        let (data, outcome) = match Self::downlink_data(message, up, results) {
+            Err(outcome) => (None, outcome),
+            Ok(data) => match parse_hex(&data) {
+                Some(payload) => {
+                    let outcome = self.sigfox_downlink(&name, message, up, &payload);
+                    (Some(data), outcome)
+                }
+                None => {
+                    self.console(format!(
+                        "{name} skipped: the downlink data is not 8 bytes of hex ({data})"
+                    ));
+                    (None, DownlinkOutcome::InvalidData)
+                }
+            },
+        };
+        if let Err(e) = self.update_downlink(message.id, data, outcome.report().status) {
+            self.console(format!("error: {e}"));
+        }
+        Some(outcome)
+    }
+
+    /// The downlink data as given: the device's static data, or the answer of a chosen BIDIR callback
+    fn downlink_data(message: &Message, up: &Uplink, results: &[CallbackResult]) -> Result<String, DownlinkOutcome> {
+        let f = &message.fields;
+        let Some(d) = up.device.as_ref() else {
+            return Err(DownlinkOutcome::NoData);
+        };
+        match d.downlink_mode.as_str() {
             "static" if !d.downlink_data.is_empty() => {
                 let ctx = DownlinkContext {
                     time: f.time,
                     station: &f.station,
                     rssi: f.rssi,
                 };
-                render_downlink(&d.downlink_data, &ctx).ok()
+                render_downlink(&d.downlink_data, &ctx).map_err(|_| DownlinkOutcome::InvalidData)
             }
-            "callback" => results.iter().find_map(|r| r.downlink.clone()),
-            _ => None,
-        });
+            "callback" if !up.bidir_chosen => Err(DownlinkOutcome::NoBidirCallback),
+            "callback" => {
+                let given: Vec<&String> = results.iter().filter_map(|r| r.downlink.as_ref()).collect();
+                let data = given.iter().find(|d| parse_hex::<8>(d).is_some()).or(given.first());
+                data.map(|d| d.to_string()).ok_or(DownlinkOutcome::NoData)
+            }
+            _ => Err(DownlinkOutcome::NoData),
+        }
+    }
+
+    // Signs the frame, waits for the device's receive window (T_W after the end of frame 1) and hands the frame to the
+    // transmitter
+    fn sigfox_downlink(&self, name: &str, message: &Message, up: &Uplink, payload: &[u8; 8]) -> DownlinkOutcome {
+        let f = &message.fields;
         // A device in public key mode gets the public key; while unknown devices are refused it gets nothing, as
         // with callbacks
         let key = match up.auth {
@@ -387,32 +475,24 @@ impl Engine {
             Auth::Public if up.trusted => Some(PUBLIC_KEY),
             _ => None,
         };
-        self.sigfox_downlink(message, up, data, key)
-    }
-
-    // Waits for the device's receive window (T_W after the end of frame 1) and hands the frame to the transmitter
-    fn sigfox_downlink(
-        &self,
-        message: &Message,
-        up: &Uplink,
-        data: Option<String>,
-        key: Option<[u8; 16]>,
-    ) -> crate::store::Result<()> {
-        let f = &message.fields;
-        let name = format!("sigfox downlink for {} seq={}", f.device_id, f.seq);
-        // No transmitter or transmitting off: receive only (the callbacks were given ack=true all the same)
-        let Some(tx) = up.transmitter.as_ref() else {
-            return self.update_downlink(message.id, None, DownlinkStatus::Unsupported);
+        let Some(key) = key else {
+            self.console(format!(
+                "{name} skipped: uplink not authenticated (auth={})",
+                json!(up.auth).as_str().unwrap_or_default()
+            ));
+            return DownlinkOutcome::NotAuthenticated;
         };
-        let payload: Option<[u8; 8]> = data.as_deref().and_then(parse_hex);
-        let (Some(data), Some(payload), Some(key)) = (data.clone(), payload, key) else {
-            if data.is_some() {
+        let tx = match &up.tx {
+            // No transmitter or transmitting off: receive only (the callbacks were given ack=true all the same)
+            Tx::ReceiveOnly => return DownlinkOutcome::ReceiveOnly,
+            Tx::Simulated => {
                 self.console(format!(
-                    "{name} skipped: uplink not authenticated (auth={})",
-                    json!(up.auth).as_str().unwrap_or_default()
+                    "{name} skipped: the uplink was simulated (data={})",
+                    hex(payload)
                 ));
+                return DownlinkOutcome::Simulated;
             }
-            return self.update_downlink(message.id, None, DownlinkStatus::Nodata);
+            Tx::Transmit(tx) => tx,
         };
         let (Some(first_frame_end_at), Some(uplink_freq_hz)) = (up.first_frame_end_at, up.uplink_freq_hz) else {
             let why = if up.first_frame_end_at.is_none() {
@@ -421,20 +501,21 @@ impl Engine {
                 "frequency of frame 1 unknown"
             };
             self.console(format!("{name} skipped: {why}"));
-            return self.update_downlink(message.id, None, DownlinkStatus::Unsupported);
+            return DownlinkOutcome::Frame1Unknown;
         };
         let window = downlink_window(first_frame_end_at);
         if now_ms() > window.deadline {
             self.console(format!("{name} skipped: the device's receive window has closed"));
-            return self.update_downlink(message.id, Some(data), DownlinkStatus::Failed);
+            return DownlinkOutcome::WindowClosed;
         }
         let freq_hz = downlink_frequency(uplink_freq_hz);
-        let frame = encode_downlink(up.device_id, f.seq, &payload, &key);
+        let frame = encode_downlink(up.device_id, f.seq, payload, &key);
         std::thread::sleep(Duration::from_millis(u64::try_from(window.at - now_ms()).unwrap_or(0)));
         // It puts a signal on air, so every transmission is logged
         self.console(format!(
-            "{name}: TX {:.6} MHz data={data} frame={}",
+            "{name}: TX {:.6} MHz data={} frame={}",
             f64::from(freq_hz) / 1e6,
+            hex(payload),
             hex(&frame)
         ));
         let sent = tx.transmit(&DownlinkTx {
@@ -445,15 +526,11 @@ impl Engine {
             deadline: window.deadline,
         });
         self.console(format!("{name}: {}", if sent { "sent" } else { "not sent" }));
-        self.update_downlink(
-            message.id,
-            Some(data),
-            if sent {
-                DownlinkStatus::Sent
-            } else {
-                DownlinkStatus::Failed
-            },
-        )
+        if sent {
+            DownlinkOutcome::Sent
+        } else {
+            DownlinkOutcome::Refused
+        }
     }
 
     /// The transmitter for downlinks, once the host has wired one

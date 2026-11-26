@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, time INTEGER NOT NULL, seq INTEGER NOT NULL,
   data TEXT NOT NULL, ack INTEGER NOT NULL, oob INTEGER NOT NULL, rssi INTEGER NOT NULL, nb_frames INTEGER NOT NULL,
   auth TEXT NOT NULL, station TEXT NOT NULL, decoded TEXT,
-  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none'
+  downlink TEXT, downlink_status TEXT NOT NULL DEFAULT 'none', simulated INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS messages_device ON messages (device_id, id);
 CREATE TABLE IF NOT EXISTS callbacks (
@@ -301,7 +301,7 @@ pub enum CallbackSubtype {
     Bidir,
     /// SERVICE: battery and temperature of an out-of-band message
     Status,
-    /// SERVICE: the device received the downlink
+    /// SERVICE: what became of the downlink an uplink asked for
     Acknowledge,
     Repeater,
     DataAdvanced,
@@ -544,10 +544,23 @@ impl CallbackInput {
         Ok(c)
     }
 
-    /// What OpenNEK sends: DATA callbacks (UPLINK and BIDIR) to a URL. The others are kept as in the Backend
-    pub fn is_sent(&self) -> bool {
-        self.callback_type == CallbackType::Data && self.channel == Channel::Url
+    /// When OpenNEK sends this callback: DATA (UPLINK and BIDIR) and SERVICE ACKNOWLEDGE callbacks to a URL. None for
+    /// the others, which are kept as in the Backend
+    pub fn trigger(&self) -> Option<Trigger> {
+        match (self.channel, self.callback_type, self.callback_subtype) {
+            (Channel::Url, CallbackType::Data, _) => Some(Trigger::Uplink),
+            (Channel::Url, CallbackType::Service, Some(CallbackSubtype::Acknowledge)) => Some(Trigger::Downlink),
+            _ => None,
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Trigger {
+    /// For every uplink
+    Uplink,
+    /// Once the downlink an uplink asked for is settled
+    Downlink,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -585,6 +598,8 @@ pub enum DownlinkStatus {
     Failed,
     Nodata,
     Unsupported,
+    /// The data was resolved but not sent: the uplink was simulated
+    Simulated,
 }
 
 impl DownlinkStatus {
@@ -597,6 +612,7 @@ impl DownlinkStatus {
             DownlinkStatus::Failed => "failed",
             DownlinkStatus::Nodata => "nodata",
             DownlinkStatus::Unsupported => "unsupported",
+            DownlinkStatus::Simulated => "simulated",
         }
     }
 }
@@ -634,6 +650,8 @@ pub struct NewMessage {
     pub decoded: Option<Value>,
     pub downlink: Option<String>,
     pub downlink_status: DownlinkStatus,
+    /// Made up from the web UI or the API (POST /api/uplinks), not received
+    pub simulated: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -714,6 +732,7 @@ fn to_message(r: &Row) -> Result<Message> {
             decoded: decoded.and_then(|d| serde_json::from_str(&d).ok()),
             downlink: r.get("downlink")?,
             downlink_status: parse_text(r, "downlink_status")?,
+            simulated: r.get("simulated")?,
         },
     })
 }
@@ -768,6 +787,9 @@ impl Store {
         // src was the MAC address of the ESP-NOW device, where its downlinks went
         if cols.iter().any(|c| c == "src") {
             db.execute_batch("ALTER TABLE messages DROP COLUMN src")?;
+        }
+        if !cols.iter().any(|c| c == "simulated") {
+            db.execute_batch("ALTER TABLE messages ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0")?;
         }
         Ok(Store { db: Mutex::new(db) })
     }
@@ -852,8 +874,8 @@ impl Store {
         let decoded = m.decoded.as_ref().map(Value::to_string);
         let r = db.query_row(
             "INSERT INTO messages (device_id, time, seq, data, ack, oob, rssi, nb_frames, auth, station, decoded, downlink,
-               downlink_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+               downlink_status, simulated)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
             params![
                 m.device_id,
                 m.time,
@@ -867,7 +889,8 @@ impl Store {
                 m.station,
                 decoded,
                 m.downlink,
-                m.downlink_status.as_str()
+                m.downlink_status.as_str(),
+                m.simulated
             ],
             to_message,
         )?;
@@ -905,11 +928,19 @@ impl Store {
             .collect()
     }
 
-    /// None when the device has no messages
+    /// All messages, or a device's, oldest first and without a limit
+    pub fn export_messages(&self, device_id: Option<&str>) -> Result<Vec<Message>> {
+        self.db()
+            .prepare("SELECT * FROM messages WHERE ?1 IS NULL OR device_id = ?1 ORDER BY id")?
+            .query_map([device_id], to_message)?
+            .collect()
+    }
+
+    /// Over the messages received from the device, not the simulated ones; None when there are none
     pub fn link_stats(&self, device_id: &str) -> Result<Option<LinkStats>> {
         let db = self.db();
         let rows: Vec<(i64, u16, i32)> = db
-            .prepare("SELECT time, seq, rssi FROM messages WHERE device_id = ? ORDER BY id")?
+            .prepare("SELECT time, seq, rssi FROM messages WHERE device_id = ? AND NOT simulated ORDER BY id")?
             .query_map([device_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .collect::<Result<_>>()?;
         // the sums are NULL over no rows
@@ -920,7 +951,7 @@ impl Store {
             "SELECT COUNT(*), MIN(time), MAX(time), MIN(rssi), AVG(rssi), MAX(rssi),
                SUM(nb_frames <= 1), SUM(nb_frames = 2), SUM(nb_frames >= 3),
                SUM(auth = 'ok'), SUM(auth = 'bad'), SUM(auth = 'public'), SUM(auth = 'unverified')
-             FROM messages WHERE device_id = ?",
+             FROM messages WHERE device_id = ? AND NOT simulated",
             [device_id],
             |r| {
                 Ok(Some(LinkStats {

@@ -21,7 +21,8 @@ pub struct CallbackResult {
     pub error: Option<String>,
     pub duration_ms: i64,
     pub response: Option<String>,
-    /// 8 bytes of hex, only when the callback asks for downlink data and the response has it
+    /// The downlinkData of the response (in lower case when a string), only when the callback asks for downlink data;
+    /// whether it is 8 bytes of hex is checked when the downlink is settled
     pub downlink: Option<String>,
 }
 
@@ -153,16 +154,20 @@ pub fn applies_to(cb: &Callback, device_id: &str) -> bool {
     list.is_empty() || list.iter().any(|d| d == device_id)
 }
 
-/// Downlink data from a response: Sigfox style ({"<ID>": {"downlinkData": ..}}, the ID in either case) or flat
+/// The downlinkData of a response, as given: Sigfox style ({"<ID>": {"downlinkData": ..}}, the ID in either case) or
+/// flat. A string comes in lower case, any other value as JSON
 pub fn extract_downlink(body: &str, device_id: &str) -> Option<String> {
     let json: Value = serde_json::from_str(body).ok()?;
     let obj = json.as_object()?;
     let data = [device_id.to_string(), device_id.to_lowercase()]
         .iter()
         .find_map(|id| obj.get(id).and_then(|d| d.get("downlinkData")).filter(|d| !d.is_null()))
-        .or_else(|| obj.get("downlinkData"))?
-        .as_str()?;
-    (data.len() == 16 && data.bytes().all(|b| b.is_ascii_hexdigit())).then(|| data.to_lowercase())
+        .or_else(|| obj.get("downlinkData"))
+        .filter(|d| !d.is_null())?;
+    Some(match data {
+        Value::String(s) => s.to_lowercase(),
+        other => other.to_string(),
+    })
 }
 
 /// A message to try a callback with when no real one applies
@@ -183,6 +188,7 @@ pub fn dummy_message(ack: bool) -> Message {
             decoded: None,
             downlink: None,
             downlink_status: DownlinkStatus::None,
+            simulated: false,
         },
     }
 }
@@ -274,8 +280,8 @@ fn is_timeout(e: &ureq::Error) -> bool {
     matches!(e, ureq::Error::Timeout(_)) || e.to_string().starts_with("timeout")
 }
 
-/// Sends one callback and waits for its answer (blocking)
-pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u32) -> CallbackResult {
+/// Sends one callback with its variables and waits for its answer (blocking)
+pub fn run_callback(cb: &Callback, vars: &HashMap<String, String>, timeout_ms: u32) -> CallbackResult {
     let started = Instant::now();
     let timeout = Duration::from_millis(timeout_ms.into());
     let elapsed = || started.elapsed().as_millis() as i64;
@@ -295,21 +301,20 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
         })
     };
     let c = &cb.input;
-    let vars = callback_vars(cb, m, device_name);
-    let url = match url::Url::parse(&render_template(&c.url, &vars, Some(encode_uri_component))) {
+    let url = match url::Url::parse(&render_template(&c.url, vars, Some(encode_uri_component))) {
         Ok(url) => url,
         Err(e) => return failed(format!("invalid URL: {e}")),
     };
     let mut headers: Vec<(String, String)> = c
         .headers
         .iter()
-        .map(|(k, v)| (k.clone(), render_template(v.as_str().unwrap_or_default(), &vars, None)))
+        .map(|(k, v)| (k.clone(), render_template(v.as_str().unwrap_or_default(), vars, None)))
         .collect();
     let has_body = c.http_method != HttpMethod::Get;
     if has_body && !headers.iter().any(|(k, _)| k == "Content-Type") {
         headers.push(("Content-Type".into(), c.content_type.clone()));
     }
-    let body = has_body.then(|| render_template(&c.body_template, &vars, None));
+    let body = has_body.then(|| render_template(&c.body_template, vars, None));
     let mut out = Outgoing {
         method: c.http_method.as_str().into(),
         sni: c.send_sni,
@@ -352,7 +357,7 @@ pub fn run_callback(cb: &Callback, m: &Message, device_name: &str, timeout_ms: u
             duration_ms: elapsed(),
             response: Some(truncate_utf16(text, MAX_RESPONSE_LOG).to_string()),
             downlink: (c.downlink && c.callback_subtype == Some(CallbackSubtype::Bidir) && ok && status != 204)
-                .then(|| extract_downlink(text, &m.fields.device_id))
+                .then(|| extract_downlink(text, vars.get("device").map_or("", String::as_str)))
                 .flatten(),
         };
     }

@@ -127,7 +127,8 @@ Anyone can sign with the public key, so it only shows that the frame is consiste
 Click a device in the **Devices** tab to see how well it gets through. The view shows the messages received with the
 first and last time, RSSI over time with its min / average / max, and the share of uplinks received with 3/3, 2/3 and 1/3
 frames. It also counts the uplinks missed and the authentication results. It covers the device's stored messages
-(OpenNEK keeps the latest 10,000 messages of all devices) and follows new uplinks as they arrive.
+(OpenNEK keeps the latest 10,000 messages of all devices) but not simulated uplinks, and follows new uplinks as they
+arrive.
 
 Missed uplinks are counted from the gaps in the sequence numbers, which go up by one for every uplink and wrap from 4095
 to 0. A device that restarts its counter, a jump of more than 256, and a late or repeated uplink are not counted.
@@ -162,8 +163,9 @@ The firmware refuses anything outside these limits, whatever the host asks:
 Callbacks have the types, channels and fields of a device type's callbacks in the Sigfox Backend: **Type**
 (DATA UPLINK / BIDIR, SERVICE STATUS / ACKNOWLEDGE / REPEATER / DATA_ADVANCED, ERROR), **Channel** (URL, BATCH_URL,
 EMAIL), Send duplicate, Custom payload config, Url pattern, Use HTTP Method, Send SNI, Headers, Content type and Body.
-OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA callbacks to
-a URL; the other types and channels are kept as in the Backend but not sent yet, which the **Callbacks** tab shows.
+OpenNEK has no device types, so a callback names its devices instead (empty for all). OpenNEK sends DATA and SERVICE
+ACKNOWLEDGE callbacks to a URL; the other types and channels are kept as in the Backend but not sent yet, which the
+**Callbacks** tab shows.
 The url pattern, headers and body support the same variables as Sigfox custom callbacks (`{device}` `{time}`
 `{data}` `{seqNumber}` `{ack}` `{rssi}` `{snr}` `{station}` `{customData#name}`, … — full list in
 [docs/protocol.md](docs/protocol.md)).
@@ -179,9 +181,28 @@ The url pattern, headers and body support the same variables as Sigfox custom ca
   "Callback response". For the latter, make a DATA BIDIR callback and choose it in the Downlink column of the list
   (a new BIDIR callback is not chosen, as in the Backend); if the response is
   `{"0A1B2C3D":{"downlinkData":"0102030405060708"}}`, those 8 bytes are sent to the device.
+- **SERVICE ACKNOWLEDGE**: sent once for each uplink that requested a downlink, after OpenNEK has settled it, with the
+  Backend's variables (`{device}` `{time}` `{infoCode}` `{infoMessage}` `{downlinkAck}` `{downlinkOverusage}`).
+  `{infoCode}` is `0` when the downlink was transmitted; otherwise it says why not (table in
+  [docs/protocol.md](docs/protocol.md#service-acknowledge)).
 - **Send SNI** is on for new callbacks (the Backend leaves it off), since most HTTPS servers need it.
 - The **Send test** button fires the callback with the latest message (not recorded in the history). Each callback's
   last answer is in the list, and its history behind it.
+
+### Trying callbacks without a device
+
+You can try your callbacks and your server before a device or a receiver is at hand. Start OpenNEK, with
+`--sigfox off` when no receiver is plugged in. On the **Messages** tab, choose **Simulate uplink**, enter a device ID
+and the data, and send. OpenNEK signs the uplink with the device's key and handles it like a received one. It shows
+up in the list marked as simulated, and the DATA callbacks run with the same variables. When the uplink requests a
+downlink, the message shows the downlink data the device would get, but OpenNEK does not transmit it.
+
+Your application's tests can send the same uplinks with `POST /api/uplinks`, described in
+[docs/protocol.md](docs/protocol.md#simulated-uplinks):
+
+```bash
+curl -X POST http://127.0.0.1:8085/api/uplinks -H 'Content-Type: application/json' -d '{"device":"0A1B2C3D","data":"0102"}'
+```
 
 ## Using it on WSL2
 
