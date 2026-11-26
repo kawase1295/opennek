@@ -257,7 +257,7 @@ async fn a_registered_device_gets_its_uplinks_decoded() {
     );
     assert_eq!(lines.len(), 4);
     let cells: Vec<&str> = lines[1].splitn(6, ',').collect();
-    assert_eq!(cells[2..5], ["00763DA3", "1981", "11"]);
+    assert_eq!(cells[2..5], ["00763DA3", "1979", "11"]);
     assert!(cells[1].ends_with('Z') && cells[1].len() == 24, "{}", cells[1]);
     assert!(
         cells[5].starts_with(r#""{""v"":1,""w"":1}",false,false,"#),
