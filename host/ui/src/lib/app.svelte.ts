@@ -1,6 +1,6 @@
 // 画面全体の状態と、それを API から読み込む処理。表示の組み立ては lib/*.ts の関数とコンポーネントが受け持つ
 import { SvelteSet } from 'svelte/reactivity'
-import type { CallbackSummary, ConsoleLine, Device, Event, Message, RadioStatus } from './api.gen'
+import type { CallbackSummary, ConsoleLine, Device, Event, LinkStats, Message, RadioStatus } from './api.gen'
 import { api, subscribe } from './api'
 import { appendLines, reloadLines } from './hostLog'
 import { t } from './i18n'
@@ -23,6 +23,8 @@ class AppState {
   devices = $state<Device[]>([])
   callbacks = $state<CallbackSummary[]>([])
   callbackView = $state<CallbackView>({ kind: 'list' })
+  // 通信品質を見ているデバイス。null なら一覧
+  deviceLink = $state<{ id: string; stats: LinkStats | null } | null>(null)
   // 新しい順。deviceFilter が空でなければそのデバイスのものだけ
   messages = $state<Message[]>([])
   deviceFilter = $state('')
@@ -36,11 +38,22 @@ class AppState {
   showTab(tab: Tab): void {
     this.tab = tab
     if (tab === 'callbacks') this.callbackView = { kind: 'list' }
+    if (tab === 'devices') this.deviceLink = null
     if (location.hash !== `#${tab}`) history.replaceState(null, '', `#${tab}`)
   }
 
   async loadDevices(): Promise<void> {
     this.devices = await api.devices()
+  }
+
+  async openLink(id: string): Promise<void> {
+    this.deviceLink = { id, stats: await api.linkStats(id) }
+  }
+
+  // 届く前にほかのデバイスへ移っていたら捨てる
+  async #reloadLink(id: string): Promise<void> {
+    const stats = await api.linkStats(id)
+    if (this.deviceLink?.id === id) this.deviceLink = { id, stats }
   }
 
   async loadCallbacks(): Promise<void> {
@@ -95,6 +108,7 @@ class AppState {
         if (!this.devices.some((d) => d.id === e.message.deviceId)) void this.loadDevices()
         this.messages = upsertMessage(this.messages, e.message, this.deviceFilter)
         this.live.add(e.message.id)
+        if (e.message.deviceId === this.deviceLink?.id) void this.#reloadLink(e.message.deviceId)
         break
       case 'callbackLog':
         // the list shows each callback's newest answer

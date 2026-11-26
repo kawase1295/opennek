@@ -7,6 +7,7 @@ import type {
   ConsoleLine,
   Device,
   Event,
+  LinkStats,
   Message,
   PortInfo,
   Settings,
@@ -50,6 +51,7 @@ export const api = {
   devices: () => request<Device[]>('GET', '/devices'),
   saveDevice: (id: string, input: DeviceInput) => request<Device>('PUT', `/devices/${id}`, input),
   deleteDevice: (id: string) => request<void>('DELETE', `/devices/${id}`),
+  linkStats: (id: string) => request<LinkStats | null>('GET', `/devices/${id}/stats`),
 
   messages: (q: { device?: string; before?: number; limit: number }) =>
     request<Message[]>('GET', `/messages${query(q)}`),
