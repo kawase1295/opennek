@@ -77,7 +77,6 @@ test('an untouched body follows the switch to and from ACKNOWLEDGE; an edited on
   const edited = { ...ack, bodyTemplate: '{"code":{infoCode}}' }
   expect(withType(edited, 'DATA').bodyTemplate).toBe('{"code":{infoCode}}')
   expect(withSubtype(cb({ bodyTemplate: 'x={data}' }), 'BIDIR').bodyTemplate).toBe('x={data}')
-  // every ACKNOWLEDGE variable is in its default body, which is JSON once they are filled in
   for (const v of variablesOf(ack)) expect(ACKNOWLEDGE_BODY).toContain(v)
 })
 

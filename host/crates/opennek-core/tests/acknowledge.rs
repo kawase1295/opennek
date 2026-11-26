@@ -370,7 +370,6 @@ async fn each_outcome_of_a_downlink_is_acknowledged_with_its_info_code() {
         );
         assert_eq!(m.fields.downlink_status, status, "{name}");
         assert_eq!(s.acks().len(), 1, "{name}");
-        // the protocol docs have the same table
         let status = serde_json::to_value(status).unwrap();
         let row = format!(
             "| `{code}` | `{info}` | `{}` | `{}` |",
@@ -402,7 +401,6 @@ async fn an_acknowledge_is_sent_like_a_data_callback_with_only_its_own_variables
         ),
         ("POST", "/ack?device=0A1B2C3D", "application/json", "0A1B2C3D")
     );
-    // the uplink's variables are not the Backend's for an ACKNOWLEDGE callback
     assert_eq!(hit.seq_header, "{seqNumber}");
 }
 
@@ -453,7 +451,6 @@ async fn a_frame_whose_key_does_not_match_is_not_acknowledged() {
         ..Case::default()
     })
     .await;
-    // signed with the public key, while the device has a key of its own
     s.engine.handle_radio(uplink(Up::default()));
     assert_eq!(s.settled(42).await.fields.downlink_status, DownlinkStatus::Nodata);
     s.quiet().await;

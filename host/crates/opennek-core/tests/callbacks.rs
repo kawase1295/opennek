@@ -47,7 +47,6 @@ fn extract_downlink_accepts_sigfox_style_and_flat_responses() {
         extract_downlink(r#"{"downlinkData":"AABBCCDDEEFF0011"}"#, "0A1B2C3D").as_deref(),
         Some("aabbccddeeff0011")
     );
-    // given as it is: whether it can be sent is decided with the downlink
     assert_eq!(
         extract_downlink(r#"{"downlinkData":"0102"}"#, "0A1B2C3D").as_deref(),
         Some("0102")

@@ -264,7 +264,6 @@ impl Engine {
         } else {
             vec![]
         };
-        // ACKNOWLEDGE callbacks tell what became of the downlink an uplink asked for
         let (mut on_uplink, mut on_downlink) = (vec![], vec![]);
         for c in callbacks {
             match c.input.trigger() {
@@ -298,7 +297,6 @@ impl Engine {
             let timeout_ms = settings.downlink_timeout_ms;
             let vars = |cb: &Callback| callback_vars(cb, &message, &name);
             let results = engine.run_callbacks(&on_uplink, message.id, vars, timeout_ms);
-            // Once, for what the station did: the device's later confirmation of the downlink sends none
             if let Some(outcome) = engine.settle_downlink(&message, &uplink, &results) {
                 let vars = acknowledge_vars(&message, outcome);
                 engine.run_callbacks(&on_downlink, message.id, |_| vars.clone(), timeout_ms);
@@ -380,8 +378,7 @@ impl Engine {
         }
     }
 
-    /// Settles the downlink an uplink asked for (None when it did not). What to send is decided first, so that the
-    /// answers of callbacks can be tried without a transmitter; then the key, the transmitter, the timing and the radio
+    /// Settles the downlink an uplink asked for (None when it did not)
     fn settle_downlink(&self, message: &Message, up: &Uplink, results: &[CallbackResult]) -> Option<DownlinkOutcome> {
         let f = &message.fields;
         if !f.ack {
@@ -422,13 +419,11 @@ impl Engine {
                     station: &f.station,
                     rssi: f.rssi,
                 };
-                // a template that no longer renders is not 8 bytes of hex either
                 Ok(render_downlink(&d.downlink_data, &ctx).unwrap_or_else(|_| d.downlink_data.clone()))
             }
             "callback" if !up.bidir_chosen => Err(DownlinkOutcome::NoBidirCallback),
             "callback" => {
                 let given: Vec<&String> = results.iter().filter_map(|r| r.downlink.as_ref()).collect();
-                // data that can be sent wins over data that cannot
                 let data = given.iter().find(|d| parse_hex::<8>(d).is_some()).or(given.first());
                 data.map(|d| d.to_string()).ok_or(DownlinkOutcome::NoData)
             }

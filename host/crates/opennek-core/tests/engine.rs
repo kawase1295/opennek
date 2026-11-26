@@ -53,7 +53,6 @@ fn a_late_repetition_is_not_stored_twice_and_a_downlink_request_without_data_is_
     assert_eq!(messages.len(), 1);
     let m = &messages[0].fields;
     assert_eq!((m.nb_frames, m.ack, m.time), (2, true, 1_000));
-    // the device has no downlink data, which is decided before whether there is a transmitter to send it
     assert_eq!(serde_json::to_value(m.downlink_status).unwrap(), "nodata");
     // reported as received (pending), then settled
     let statuses: Vec<_> = std::iter::from_fn(|| events.try_recv().ok())

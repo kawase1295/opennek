@@ -160,7 +160,6 @@ fn nothing_is_sent_unless_transmitting_is_enabled() {
     let s = setup(false, true, "", false);
     s.engine
         .handle_radio(RadioEvent::Message(uplink(&PUBLIC_KEY, 1, soon(), Some(ULF))));
-    // the data that would have been sent is kept
     assert_eq!(
         settled(&s.engine),
         (DownlinkStatus::Unsupported, Some("0102030405060708".into()))
