@@ -11,6 +11,7 @@
     rowsOf,
     SUBTYPES,
     TYPES,
+    variablesOf,
     withSubtype,
     withType,
     type HeaderRow,
@@ -25,10 +26,6 @@
   const CHANNELS = ['URL', 'BATCH_URL', 'EMAIL'] as const
   const METHODS = ['POST', 'PUT', 'GET'] as const
   const CONTENT_TYPES = ['application/json', 'text/plain', 'application/x-www-form-urlencoded'] as const
-  const VARIABLES = [
-    '{device}', '{deviceName}', '{time}', '{data}', '{seqNumber}', '{ack}', '{oob}',
-    '{rssi}', '{snr}', '{station}', '{nbFrames}', '{customData#name}',
-  ]
 
   let form = $state<CallbackInput>(blankCallback())
   let headers = $state<HeaderRow[]>([])
@@ -170,7 +167,7 @@
     <div class="f vars-row"><span class="l"></span>
       <span class="c">
         <span class="vars">
-          {#each VARIABLES as v (v)}
+          {#each variablesOf(form) as v (v)}
             <button type="button" class="var" onclick={() => insert(v)}><code>{v}</code></button>{' '}
           {/each}
         </span>
@@ -199,6 +196,7 @@
 
   <aside class="side">
     {#if form.callbackSubtype === 'BIDIR'}<div class="card note"><strong>BIDIR</strong><p>{t('cb.bidirHint')}</p></div>{/if}
+    {#if form.callbackSubtype === 'ACKNOWLEDGE'}<div class="card note"><strong>ACKNOWLEDGE</strong><p>{t('cb.ackHint')}</p></div>{/if}
     {#if !isSent(form)}<div class="card note warn"><strong>{t('cb.notSent')}</strong><p>{t('cb.notSentHint')}</p></div>{/if}
   </aside>
 </div>
